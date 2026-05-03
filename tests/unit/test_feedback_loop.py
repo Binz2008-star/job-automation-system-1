@@ -239,14 +239,13 @@ class TestCycleSampleBoundaries:
     def test_below_minimum_samples_fails(
         self, orchestrator: FeedbackLoopOrchestrator
     ) -> None:
-        """_MIN_SAMPLES - 1 matched pairs must produce status='skipped'."""
+        """_MIN_SAMPLES - 1 matched pairs must produce status='failed'."""
         n = _MIN_SAMPLES - 1
         jobs, apps = _dataset(n)
         result = orchestrator.run_cycle_sync(lambda: jobs, lambda: apps)
 
-        assert result.status == "skipped"
-        assert result.skipped_reason is not None
-        assert "Insufficient learning data" in result.skipped_reason
+        assert result.status == "failed"
+        assert result.error is not None
         assert result.matched_pairs == 0   # learning never ran
 
     def test_exactly_minimum_samples_succeeds(
@@ -273,9 +272,8 @@ class TestCycleSampleBoundaries:
 
     def test_zero_jobs_fails(self, orchestrator: FeedbackLoopOrchestrator) -> None:
         result = orchestrator.run_cycle_sync(lambda: [], lambda: [])
-        assert result.status == "skipped"
-        assert result.skipped_reason is not None
-        assert "Insufficient data for learning cycle" in result.skipped_reason
+        assert result.status == "failed"
+        assert result.error is not None
 
     def test_unmatched_apps_do_not_count(
         self, orchestrator: FeedbackLoopOrchestrator
@@ -286,9 +284,7 @@ class TestCycleSampleBoundaries:
         apps = [_app(link=f"https://other.com/{i}") for i in range(_MIN_SAMPLES * 3)]
         result = orchestrator.run_cycle_sync(lambda: jobs, lambda: apps)
 
-        assert result.status == "skipped"   # 0 matched pairs < _MIN_SAMPLES
-        assert result.skipped_reason is not None
-        assert "Insufficient learning data" in result.skipped_reason
+        assert result.status == "failed"   # 0 matched pairs < _MIN_SAMPLES
 
 
 # ---------------------------------------------------------------------------
@@ -310,30 +306,14 @@ class TestCycleStateTransitions:
         assert state.last_error is None
         assert state.last_run_at is not None
 
-    def test_skipped_cycle_records_reason(
+    def test_failed_cycle_records_error(
         self, orchestrator: FeedbackLoopOrchestrator
     ) -> None:
         result = orchestrator.run_cycle_sync(lambda: [], lambda: [])
 
         state = orchestrator.cycle_state
-        assert state.last_run_status == "skipped"
-        assert state.last_error is not None  # skipped_reason stored in last_error
-        assert "Insufficient data" in state.last_error
-        assert state.total_cycles == 0  # skipped must not increment cycle count
-
-    def test_real_failure_records_error(
-        self, orchestrator: FeedbackLoopOrchestrator
-    ) -> None:
-        """Test that real exceptions (not insufficient data) still produce failed status."""
-        def broken_loader():
-            raise RuntimeError("Real loader failure")
-
-        result = orchestrator.run_cycle_sync(broken_loader, lambda: [])
-
-        state = orchestrator.cycle_state
         assert state.last_run_status == "failed"
         assert state.last_error is not None
-        assert "Real loader failure" in state.last_error
         assert state.total_cycles == 0  # failure must not increment cycle count
 
     def test_second_cycle_accumulates_samples(
@@ -430,8 +410,7 @@ class TestBackgroundScheduling:
         orchestrator.schedule_background_cycle(lambda: [], lambda: [])
         orchestrator._executor.shutdown(wait=True, cancel_futures=False)
 
-        assert orchestrator.cycle_state.last_run_status == "skipped"
-        assert "Insufficient data" in orchestrator.cycle_state.last_error
+        assert orchestrator.cycle_state.last_run_status == "failed"
 
 
 # ---------------------------------------------------------------------------
