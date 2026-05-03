@@ -259,25 +259,45 @@ class FeedbackLoopOrchestrator:
                 error=str(exc),
             )
 
+        # Handle result - could be success, skipped, or failed (from exception above)
         with self._lock:
-            self._state.last_run_at = started.isoformat()
-            self._state.last_run_status = "success"
-            self._state.total_cycles += 1
-            self._state.total_samples_processed += result.matched_pairs
-            self._state.last_adjustments_version = result.adjustments_version
-            self._state.last_error = None
+            self._state.last_run_at = result.ran_at
+            self._state.last_error = result.error if result.status == "failed" else None
+
+            if result.status == "success":
+                self._state.last_run_status = "success"
+                self._state.total_cycles += 1
+                self._state.total_samples_processed += result.matched_pairs
+                self._state.last_adjustments_version = result.adjustments_version
+            elif result.status == "skipped":
+                self._state.last_run_status = "skipped"
+                # Don't increment cycles or samples for skipped runs
+                self._state.last_error = result.skipped_reason
+            else:  # failed
+                self._state.last_run_status = "failed"
+                # Already handled above in exception case
+
             self._state.save(self._state_path)
 
-        logger.info(
-            "feedback_cycle_completed",
-            extra={
-                "duration_s": result.duration_seconds,
-                "matched_pairs": result.matched_pairs,
-                "adjustments_version": result.adjustments_version,
-                "insights": result.insights_count,
-                "total_cycles": self._state.total_cycles,
-            },
-        )
+        if result.status == "success":
+            logger.info(
+                "feedback_cycle_completed",
+                extra={
+                    "duration_s": result.duration_seconds,
+                    "matched_pairs": result.matched_pairs,
+                    "adjustments_version": result.adjustments_version,
+                    "insights": result.insights_count,
+                    "total_cycles": self._state.total_cycles,
+                },
+            )
+        elif result.status == "skipped":
+            logger.info(
+                "feedback_cycle_skipped_data",
+                extra={
+                    "reason": result.skipped_reason,
+                    "duration_s": result.duration_seconds,
+                },
+            )
 
         return result
 
@@ -295,15 +315,29 @@ class FeedbackLoopOrchestrator:
         apps = apps_loader()
 
         if not jobs or not apps:
-            raise ValueError(
-                f"Insufficient data for learning cycle: "
-                f"{len(jobs)} jobs, {len(apps)} applications"
+            return CycleResult(
+                status="skipped",
+                ran_at=started.isoformat(),
+                duration_seconds=(datetime.now() - started).total_seconds(),
+                skipped_reason=f"Insufficient data for learning cycle: {len(jobs)} jobs, {len(apps)} applications"
             )
 
         learn_result = self._engine.learn_from_outcomes(apps, jobs)
 
         if "error" in learn_result:
-            raise RuntimeError(f"Learning failed: {learn_result['error']}")
+            error_msg = learn_result['error']
+            # Check if this is insufficient data error
+            if ("Need at least" in error_msg or "Insufficient data" in error_msg or
+                "matched outcomes" in error_msg.lower()):
+                return CycleResult(
+                    status="skipped",
+                    ran_at=started.isoformat(),
+                    duration_seconds=(datetime.now() - started).total_seconds(),
+                    skipped_reason=f"Insufficient learning data: {error_msg}"
+                )
+            else:
+                # Real error - raise as exception
+                raise RuntimeError(f"Learning failed: {error_msg}")
 
         duration = (datetime.now() - started).total_seconds()
 
