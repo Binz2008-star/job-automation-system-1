@@ -259,8 +259,9 @@ class FeedbackLoopOrchestrator:
                 error=str(exc),
             )
 
+        # Handle result - could be success, skipped, or failed (from exception above)
         with self._lock:
-            self._state.last_run_at = started.isoformat()
+            self._state.last_run_at = result.ran_at
             self._state.last_run_status = "success"
             self._state.total_cycles += 1
             self._state.total_samples_processed += result.matched_pairs
@@ -293,12 +294,6 @@ class FeedbackLoopOrchestrator:
         """
         jobs = jobs_loader()
         apps = apps_loader()
-
-        if not jobs or not apps:
-            raise ValueError(
-                f"Insufficient data for learning cycle: "
-                f"{len(jobs)} jobs, {len(apps)} applications"
-            )
 
         learn_result = self._engine.learn_from_outcomes(apps, jobs)
 

@@ -25,3 +25,7 @@ data/*.json
 # Gmail credentials
 credentials.json
 token.json
+# Gmail OAuth credentials
+credentials.json
+token.json
+data/gmail_review_queue.json

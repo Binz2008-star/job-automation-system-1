@@ -378,10 +378,6 @@ class ResponseIntelligenceEngine:
         Produces and persists updated ScoringAdjustments.
         All computation is deterministic given the inputs.
         """
-        if not applications or not jobs:
-            logger.warning("learn_from_outcomes_insufficient_data")
-            return {"error": "Insufficient data for learning"}
-
         # O(n) index — no nested loop
         job_index: Dict[str, Dict[str, Any]] = {j["link"]: j for j in jobs if j.get("link")}
         matched = _match_applications(applications, job_index)
