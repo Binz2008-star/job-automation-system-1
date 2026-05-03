@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from src.decision_engine_v2 import JobDecisionEngine
+from src.decision_engine import JobDecisionEngine
 from src.response_intelligence import (
     ResponseIntelligenceEngine,
     ScoringAdjustments,

@@ -30,7 +30,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.decision_engine_v2 import JobDecisionEngine
+from src.decision_engine import JobDecisionEngine
 from src.feedback_loop import (
     CycleResult,
     CycleState,
