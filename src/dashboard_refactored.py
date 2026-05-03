@@ -13,7 +13,7 @@ from typing import Dict, List, Any
 from src.db import get_top_jobs, get_application_stats, is_db_available
 from src.applications import get_applied_jobs
 from src.profile import get_candidate_profile, get_target_roles
-from src.decision_engine_v2 import JobDecisionEngine, generate_decision_insights
+from src.decision_engine import JobDecisionEngine, generate_decision_insights
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 OUTPUT_FILE = BASE_DIR / "dashboard.html"
@@ -32,7 +32,7 @@ def load_dashboard_data() -> Dict[str, Any]:
             applications = []
             app_stats = {"total_applied": 0, "success_rate": 0}
             data_source = "JSON Fallback"
-        
+
         return {
             'jobs': jobs,
             'applications': applications,
@@ -70,7 +70,7 @@ def render_recent_section(recent_applications: List[Dict], recent_jobs: List[Dic
                 </table>
             </div>
         </div>"""
-    
+
     return f"""
     <div class="card">
         <h2>Recent Jobs</h2>
@@ -86,7 +86,7 @@ def application_row(app: Dict[str, Any]) -> str:
     title = app.get("title", "Untitled")
     company = app.get("company", "Unknown")
     status = app.get("status", "unknown")
-    
+
     # Parse date safely
     applied_date = app.get("date_applied", "")
     if applied_date:
@@ -97,19 +97,19 @@ def application_row(app: Dict[str, Any]) -> str:
             date_str = "Unknown"
     else:
         date_str = "Unknown"
-    
+
     notes = (app.get("notes", "") or "")[:50] + "..." if app.get("notes") else ""
-    
+
     status_colors = {
         "saved": "var(--low)",
-        "opened": "var(--mid)", 
+        "opened": "var(--mid)",
         "applied": "var(--accent)",
         "interview": "var(--good)",
         "offer": "#10b981",
         "rejected": "var(--danger)"
     }
     color = status_colors.get(status, "var(--muted)")
-    
+
     return f"""
     <tr>
         <td><strong>{title}</strong><div class="muted">{company}</div></td>
@@ -126,7 +126,7 @@ def job_row(job: Dict[str, Any]) -> str:
     location = job.get("location", "Unknown")
     score = int(job.get("score", 0))
     link = job.get("link", "#")
-    
+
     # Determine quality band
     if score >= 85:
         band = "Very High"
@@ -143,7 +143,7 @@ def job_row(job: Dict[str, Any]) -> str:
     else:
         band = "Low"
         band_class = "low"
-    
+
     return f"""
     <tr>
         <td><a href="{link}" target="_blank">{title}</a><div class="muted">{company}</div></td>
@@ -164,7 +164,7 @@ def strategy_recommendation(rec: str) -> str:
 
 def build_refactored_dashboard() -> str:
     """Build dashboard with refactored decision engine integration."""
-    
+
     # Load data with error handling
     data = load_dashboard_data()
     jobs = data['jobs']
@@ -172,17 +172,17 @@ def build_refactored_dashboard() -> str:
     app_stats = data['app_stats']
     data_source = data['source']
     error = data['error']
-    
+
     # Create decision engine with dependency injection
     try:
         engine = JobDecisionEngine.from_loaders(get_candidate_profile, get_target_roles)
         insights = generate_decision_insights(jobs, applications, app_stats, engine)
-        
+
         market_analysis = insights.get('market_analysis', {})
         application_strategy = insights.get('application_strategy', {})
         competitive_analysis = insights.get('competitive_analysis', {})
         candidate_profile = insights.get('candidate_profile', {})
-        
+
     except Exception as e:
         # Fallback if decision engine fails
         market_analysis = {}
@@ -190,37 +190,37 @@ def build_refactored_dashboard() -> str:
         competitive_analysis = {}
         candidate_profile = {}
         error = str(e)
-    
+
     now = datetime.now()
-    
+
     # Calculate metrics
     total_jobs = len(jobs)
     high_quality = len([j for j in jobs if j.get('score', 0) >= 65])
     very_high_quality = len([j for j in jobs if j.get('score', 0) >= 85])
     applied_count = len(applications)
-    
+
     # Market health
     market_health = market_analysis.get('market_health', {})
     health_score = market_health.get('health_score', 0)
     health_status = market_health.get('status', 'Unknown')
-    
+
     # Priority jobs
     prioritized_jobs = application_strategy.get('prioritized_jobs', [])[:10]
     apply_today_count = len([j for j in prioritized_jobs if j.get('apply_today', False)])
-    
+
     # Success probabilities
     success_probs = [j.get('success_probability', 0) for j in prioritized_jobs[:5]]
     avg_success = f"{sum(success_probs)/len(success_probs):.0f}%" if success_probs else "0%"
-    
+
     # Strategy recommendations
     market_recs = market_analysis.get('recommendations', [])[:3]
     app_recs = application_strategy.get('action_items', [])[:3]
     competitive_advantages = candidate_profile.get('competitive_advantages', [])[:3]
-    
+
     # Recent data
     recent_applications = sorted(applications, key=lambda x: x.get('date_applied', ''), reverse=True)[:10]
     recent_jobs = sorted(jobs, key=lambda x: x.get('date_found', ''), reverse=True)[:15]
-    
+
     # Build HTML
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -239,13 +239,13 @@ def build_refactored_dashboard() -> str:
             --text: #f9fafb;
             --muted: #9ca3af;
         }}
-        
+
         * {{
             box-sizing: border-box;
             margin: 0;
             padding: 0;
         }}
-        
+
         body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #020617, #111827);
@@ -253,18 +253,18 @@ def build_refactored_dashboard() -> str:
             line-height: 1.6;
             min-height: 100vh;
         }}
-        
+
         .container {{
             max-width: 1800px;
             margin: 0 auto;
             padding: 2rem;
         }}
-        
+
         .header {{
             text-align: center;
             margin-bottom: 3rem;
         }}
-        
+
         h1 {{
             font-size: 3rem;
             font-weight: 800;
@@ -273,12 +273,12 @@ def build_refactored_dashboard() -> str:
             -webkit-text-fill-color: transparent;
             margin-bottom: 0.5rem;
         }}
-        
+
         .subtitle {{
             color: var(--muted);
             font-size: 1.2rem;
         }}
-        
+
         .badges {{
             display: flex;
             gap: 1rem;
@@ -286,7 +286,7 @@ def build_refactored_dashboard() -> str:
             margin-top: 1rem;
             flex-wrap: wrap;
         }}
-        
+
         .badge {{
             background: rgba(255, 255, 255, 0.1);
             border: 1px solid rgba(255, 255, 255, 0.2);
@@ -294,35 +294,35 @@ def build_refactored_dashboard() -> str:
             border-radius: 2rem;
             font-size: 0.9rem;
         }}
-        
+
         .ai-badge {{
             background: rgba(139, 92, 246, 0.2);
             border-color: var(--ai);
         }}
-        
+
         .error-badge {{
             background: rgba(239, 68, 68, 0.2);
             border-color: var(--danger);
         }}
-        
+
         .grid {{
             display: grid;
             gap: 1.5rem;
             margin-bottom: 2rem;
         }}
-        
+
         .grid-4 {{
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         }}
-        
+
         .grid-3 {{
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
         }}
-        
+
         .grid-2 {{
             grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
         }}
-        
+
         .card {{
             background: rgba(31, 41, 55, 0.8);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -331,26 +331,26 @@ def build_refactored_dashboard() -> str:
             backdrop-filter: blur(10px);
             transition: transform 0.2s ease, box-shadow 0.2s ease;
         }}
-        
+
         .card:hover {{
             transform: translateY(-2px);
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
         }}
-        
+
         .ai-card {{
             background: rgba(139, 92, 246, 0.1);
             border-color: var(--ai);
         }}
-        
+
         .error-card {{
             background: rgba(239, 68, 68, 0.1);
             border-color: var(--danger);
         }}
-        
+
         .stat-card {{
             text-align: center;
         }}
-        
+
         .stat-label {{
             color: var(--muted);
             font-size: 0.8rem;
@@ -358,108 +358,108 @@ def build_refactored_dashboard() -> str:
             letter-spacing: 0.1em;
             margin-bottom: 0.5rem;
         }}
-        
+
         .stat-value {{
             font-size: 2.5rem;
             font-weight: 800;
             margin-bottom: 0.5rem;
         }}
-        
+
         .stat-sub {{
             color: var(--muted);
             font-size: 0.9rem;
         }}
-        
+
         h2 {{
             font-size: 1.5rem;
             margin-bottom: 1rem;
             color: var(--accent);
         }}
-        
+
         h3 {{
             font-size: 1.2rem;
             margin-bottom: 0.8rem;
             color: var(--ai);
         }}
-        
+
         .insight-card {{
             text-align: center;
             padding: 1rem;
         }}
-        
+
         .insight-value {{
             font-size: 2rem;
             font-weight: 700;
             margin-bottom: 0.5rem;
         }}
-        
+
         .insight-label {{
             color: var(--muted);
             font-size: 0.9rem;
         }}
-        
+
         .strategy-item {{
             display: flex;
             gap: 0.8rem;
             margin-bottom: 1rem;
             align-items: flex-start;
         }}
-        
+
         .strategy-bullet {{
             font-size: 1.2rem;
         }}
-        
+
         .priority-job {{
             background: rgba(59, 130, 246, 0.1);
             border-color: var(--accent);
         }}
-        
+
         table {{
             width: 100%;
             border-collapse: collapse;
         }}
-        
+
         th, td {{
             padding: 0.8rem;
             text-align: left;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }}
-        
+
         th {{
             color: var(--muted);
             font-size: 0.8rem;
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }}
-        
+
         a {{
             color: var(--accent);
             text-decoration: none;
         }}
-        
+
         a:hover {{
             text-decoration: underline;
         }}
-        
+
         .muted {{
             color: var(--muted);
             font-size: 0.9rem;
         }}
-        
+
         .score {{
             font-weight: 700;
             font-size: 1.1rem;
         }}
-        
+
         .success-rate {{
             color: var(--good);
             font-weight: 600;
         }}
-        
+
         .apply-today {{
             font-size: 1.2rem;
         }}
-        
+
         .pill {{
             display: inline-block;
             padding: 0.3rem 0.8rem;
@@ -467,32 +467,32 @@ def build_refactored_dashboard() -> str:
             font-size: 0.8rem;
             font-weight: 600;
         }}
-        
+
         .very-high {{
             background: rgba(16, 185, 129, 0.2);
             color: #10b981;
         }}
-        
+
         .high {{
             background: rgba(34, 197, 94, 0.2);
             color: #22c55e;
         }}
-        
+
         .high-quality {{
             background: rgba(34, 197, 94, 0.2);
             color: #22c55e;
         }}
-        
+
         .medium {{
             background: rgba(245, 158, 11, 0.2);
             color: #f59e0b;
         }}
-        
+
         .low {{
             background: rgba(100, 116, 139, 0.2);
             color: #64748b;
         }}
-        
+
         .footer {{
             text-align: center;
             color: var(--muted);
@@ -500,7 +500,7 @@ def build_refactored_dashboard() -> str:
             padding: 2rem;
             border-top: 1px solid rgba(255, 255, 255, 0.1);
         }}
-        
+
         .refresh-btn {{
             background: var(--accent);
             color: white;
@@ -511,11 +511,11 @@ def build_refactored_dashboard() -> str:
             font-weight: 600;
             margin-top: 1rem;
         }}
-        
+
         .refresh-btn:hover {{
             background: #0ea5e9;
         }}
-        
+
         .error-message {{
             background: rgba(239, 68, 68, 0.1);
             border: 1px solid var(--danger);
@@ -524,16 +524,16 @@ def build_refactored_dashboard() -> str:
             margin-bottom: 1rem;
             color: var(--danger);
         }}
-        
+
         @media (max-width: 768px) {{
             .container {{
                 padding: 1rem;
             }}
-            
+
             h1 {{
                 font-size: 2rem;
             }}
-            
+
             .grid-4, .grid-3, .grid-2 {{
                 grid-template-columns: 1fr;
             }}
@@ -653,7 +653,7 @@ def build_refactored_dashboard() -> str:
     </div>
 </body>
 </html>"""
-    
+
     return html
 
 

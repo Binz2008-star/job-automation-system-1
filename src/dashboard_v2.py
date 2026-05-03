@@ -13,7 +13,7 @@ from typing import Dict, List, Any
 from src.db import get_top_jobs, get_application_stats, is_db_available
 from src.applications import get_applied_jobs
 from src.profile import get_candidate_profile, get_target_roles
-from src.decision_engine_v2 import JobDecisionEngine, generate_decision_insights
+from src.decision_engine import JobDecisionEngine, generate_decision_insights
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 OUTPUT_FILE = BASE_DIR / "dashboard.html"

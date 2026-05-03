@@ -28,7 +28,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, Tuple
 
-from src.decision_engine_v2 import (
+from src.decision_engine import (
     EngineConfig,
     JobDecisionEngine,
     ProbabilityResult,
@@ -46,6 +46,17 @@ _MIN_SAMPLES = 5         # minimum outcomes before a factor is trusted
 # Enums — used everywhere; no raw string comparisons
 # ---------------------------------------------------------------------------
 
+# Status aliases for common variations in application records
+_STATUS_ALIASES: Dict[str, str] = {
+    "interview":   "interview_scheduled",
+    "offer":       "offer_extended",
+    "assessment":  "technical_assessment",
+    "screening":   "screening",
+    "rejected":    "rejected",
+    "applied":     "no_response",
+}
+
+
 class ResponseType(str, Enum):
     REJECTED               = "rejected"
     NO_RESPONSE            = "no_response"
@@ -60,10 +71,19 @@ class ResponseType(str, Enum):
 
     @classmethod
     def from_raw(cls, raw: Optional[str]) -> "ResponseType":
+        normalized = (raw or "").strip().lower()
         try:
-            return cls(raw or "no_response")
+            return cls(normalized)
         except ValueError:
-            return cls.NO_RESPONSE
+            pass
+        aliased = _STATUS_ALIASES.get(normalized)
+        if aliased:
+            try:
+                return cls(aliased)
+            except ValueError:
+                pass
+        logger.debug("response_type_unknown", extra={"raw": raw})
+        return cls.NO_RESPONSE
 
     @property
     def is_positive(self) -> bool:
