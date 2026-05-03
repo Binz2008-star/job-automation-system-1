@@ -1,144 +1,250 @@
+"""
+src/run_daily.py
+Daily job search pipeline.
+
+Execution order:
+  1. Init DB
+  2. Fetch + filter jobs
+  3. Score + persist
+  4. Notify (email + Telegram)
+  5. Apply assistant for top matches
+  6. Feedback loop (non-blocking, against full history)
+  7. Dashboard regeneration
+
+Run:
+    python -m src.run_daily
+"""
+
+from __future__ import annotations
+
+import logging
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    stream=sys.stdout,
+)
+logger = logging.getLogger("run_daily")
+
 from src.job_sources import get_jobs
 from src.scoring import score_job, get_profile_explanation
 from src.message_generator import generate_message
 from src.filter import filter_new_jobs
 from src.notifier import send_email, format_jobs_email
 from src.telegram_bot import send_telegram_message, format_telegram_jobs
-from src.job_history import add_jobs_to_history
+from src.job_history import add_jobs_to_history, load_job_history
 from src.apply_assistant import run_apply_assistant
-from src.db import init_db, save_job, get_seen_links, is_db_available
+from src.db import init_db, save_job, is_db_available, get_top_jobs
 from src.profile import get_candidate_profile, get_target_roles
-from src.applications import load_applied_jobs
+from src.applications import get_applied_jobs
 from src.decision_engine import JobDecisionEngine
-from src.feedback_loop import FeedbackLoopOrchestrator
-from pathlib import Path
-import logging
+from src.feedback_loop import FeedbackLoopOrchestrator, CycleResult
+from src.dashboard import build_dashboard
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / "data"
+DASHBOARD_FILE = BASE_DIR / "dashboard.html"
+
+# 23h: prevents double-runs on the same calendar day; still allows a
+# manual retry after a failure without waiting a full 24h.
+_FEEDBACK_COOLDOWN = timedelta(hours=23)
 
 
-def run_pipeline():
-    """Execute the complete job hunting pipeline: fetch, filter, score, notify, learn."""
-    # Initialize database if available
-    if is_db_available():
-        print("🗄️ Database available, initializing...")
-        if init_db():
-            print("✅ Database ready")
-        else:
-            print("⚠️ Database initialization failed, using JSON fallback")
+def _init_db() -> None:
+    if not is_db_available():
+        logger.info("db_unavailable json_fallback_active")
+        return
+    logger.info("db_initializing")
+    if init_db():
+        logger.info("db_ready")
+    else:
+        logger.warning("db_init_failed json_fallback_active")
 
-    # Initialize feedback loop orchestrator
-    print("🧠 Initializing feedback loop orchestrator...")
+
+def _build_orchestrator() -> Optional[FeedbackLoopOrchestrator]:
+    """
+    Build engine + orchestrator once per run.
+    Returns None on failure — pipeline continues without the feedback loop.
+    """
     try:
-        profile = get_candidate_profile()
-        target_roles = get_target_roles()
-        decision_engine = JobDecisionEngine.from_loaders(lambda: profile, lambda: target_roles)
-
-        # Use project root for state directory
-        state_dir = Path(__file__).parent.parent / "data" / "feedback_state"
-        state_dir.mkdir(parents=True, exist_ok=True)
-
+        decision_engine = JobDecisionEngine.from_loaders(
+            get_candidate_profile,  # function reference, not its result
+            get_target_roles,
+        )
         orchestrator = FeedbackLoopOrchestrator.build(
             decision_engine=decision_engine,
-            state_dir=state_dir,
-            cooldown=None  # Run daily, so no cooldown needed
+            state_dir=DATA_DIR,           # consistent with rest of system
+            cooldown=_FEEDBACK_COOLDOWN,
         )
-        print("✅ Feedback loop orchestrator initialized")
-    except Exception as e:
-        print(f"⚠️ Failed to initialize feedback loop: {e}")
-        orchestrator = None
+        logger.info(
+            f"orchestrator_ready "
+            f"last_run={orchestrator.cycle_state.last_run_at} "
+            f"adjustments_v={orchestrator.cycle_state.last_adjustments_version}"
+        )
+        return orchestrator
+    except Exception:
+        logger.exception("orchestrator_init_failed feedback_loop_disabled")
+        return None
 
+
+def _fetch_and_score() -> Tuple[
+    List[Tuple[Dict[str, Any], int]],
+    List[Tuple[Dict[str, Any], int]],
+]:
+    """Returns (all_scored, high_quality_matches). High quality = score >= 65."""
     jobs = get_jobs()
     jobs = filter_new_jobs(jobs)
-    print(f"Found {len(jobs)} new jobs after filtering")
-    matches = []
-    all_scored_jobs = []
+    logger.info(f"jobs_fetched count={len(jobs)}")
 
+    all_scored: List[Tuple[Dict[str, Any], int]] = []
     for job in jobs:
         score = score_job(job)
-        all_scored_jobs.append((job, score))
-        if score >= 65:  # Increased threshold for Roben's profile
-            matches.append((job, score))
-
-        # Save to database if available
+        all_scored.append((job, score))
         if is_db_available():
             save_job(job, score)
 
-    matches.sort(key=lambda x: x[1], reverse=True)
+    matches = sorted(
+        [(j, s) for j, s in all_scored if s >= 65],
+        key=lambda x: x[1],
+        reverse=True,
+    )
+    logger.info(f"scoring_complete total={len(all_scored)} high_quality={len(matches)}")
+    return all_scored, matches
 
-    print(f"Found {len(matches)} high-quality matches")
 
-    for job, score in matches[:20]:
-        print("\n=== JOB MATCH ===")
-        print(job.get("title"), "-", job.get("company"))
-        print("Location:", job.get("location"))
-        print("Score:", score)
-        print("Why it matches:", get_profile_explanation(job))
-        print("Apply:", job.get("link"))
-        print(generate_message(job))
-
-    # Save to JSON history (backup)
-    add_jobs_to_history(all_scored_jobs)
-
-    # Send email notification (optional)
+def _persist_history(all_scored: List[Tuple[Dict[str, Any], int]]) -> None:
     try:
-        email_content = format_jobs_email(matches)
-        email_subject = "Job Hunting Daily Report" if matches else "No New Jobs Today"
-        if send_email(email_subject, email_content):
-            print("✅ Email notification sent successfully")
-        else:
-            print("⚠️ Email notification failed (continuing with Telegram)")
-    except Exception as e:
-        print(f"⚠️ Email notification error: {e} (continuing with Telegram)")
+        add_jobs_to_history(all_scored)
+        logger.info(f"history_saved count={len(all_scored)}")
+    except Exception:
+        logger.exception("history_save_failed")
 
-    # Send Telegram notification
+
+def _notify(matches: List[Tuple[Dict[str, Any], int]]) -> None:
     try:
-        telegram_content = format_telegram_jobs(matches)
-        if send_telegram_message(telegram_content):
-            print("✅ Telegram notification sent successfully")
+        subject = "Job Hunting Daily Report" if matches else "No New Jobs Today"
+        if send_email(subject, format_jobs_email(matches)):
+            logger.info("email_sent")
         else:
-            print("⚠️ Telegram notification failed")
-    except Exception as e:
-        print(f"⚠️ Telegram notification error: {e}")
+            logger.warning("email_failed")
+    except Exception:
+        logger.exception("email_error")
 
-    # Apply assistant for top jobs
-    if matches:
-        try:
-            run_apply_assistant(matches)
-        except Exception as e:
-            print(f"⚠️ Apply assistant error: {e}")
+    try:
+        if send_telegram_message(format_telegram_jobs(matches)):
+            logger.info("telegram_sent")
+        else:
+            logger.warning("telegram_failed")
+    except Exception:
+        logger.exception("telegram_error")
+
+
+def _apply_assistant(matches: List[Tuple[Dict[str, Any], int]]) -> None:
+    if not matches:
+        logger.info("apply_assistant_skipped no_matches")
+        return
+    try:
+        run_apply_assistant(matches)
+        logger.info(f"apply_assistant_done candidates={len(matches)}")
+    except Exception:
+        logger.exception("apply_assistant_error")
+
+
+def _run_feedback_loop(
+    orchestrator: Optional[FeedbackLoopOrchestrator],
+) -> Optional[CycleResult]:
+    """
+    Learn from full job history + all tracked applications.
+
+    Loads full history — not just today's new jobs. Today's 10-20 new jobs
+    have no application matches yet; learning against them always exits
+    with "insufficient data".
+    """
+    if orchestrator is None:
+        return None
+
+    if not orchestrator.is_due():
+        logger.info(
+            f"feedback_loop_not_due last_run={orchestrator.cycle_state.last_run_at}"
+        )
+        return None
+
+    logger.info("feedback_loop_starting")
+
+    def _load_jobs() -> List[Dict[str, Any]]:
+        if is_db_available():
+            return get_top_jobs(500)
+        return load_job_history()
+
+    result = orchestrator.run_cycle_sync(
+        jobs_loader=_load_jobs,
+        apps_loader=get_applied_jobs,
+    )
+
+    if result.status == "success":
+        logger.info(
+            f"feedback_loop_success "
+            f"matched={result.matched_pairs} "
+            f"adjustments_v={result.adjustments_version} "
+            f"insights={result.insights_count} "
+            f"duration_s={result.duration_seconds:.2f}"
+        )
+    elif result.status == "skipped":
+        logger.info(f"feedback_loop_skipped reason={result.skipped_reason}")
     else:
-        print("No matches for apply assistant.")
+        logger.error(f"feedback_loop_failed error={result.error}")
 
-    # Run feedback loop learning cycle
-    if orchestrator and orchestrator.is_due():
-        print("\n🔄 Running feedback loop learning cycle...")
-        try:
-            # Load jobs and applications for learning
-            jobs_for_learning = [job for job, _ in all_scored_jobs]
-            applications = load_applied_jobs()
-
-            result = orchestrator.run_cycle_sync(
-                jobs_loader=lambda: jobs_for_learning,
-                apps_loader=lambda: applications
-            )
-
-            if result.status == "success":
-                print(f"✅ Feedback loop completed successfully")
-                print(f"   - Matched pairs: {result.matched_pairs}")
-                print(f"   - Adjustments version: {result.adjustments_version}")
-                print(f"   - Duration: {result.duration_seconds:.2f}s")
-            elif result.status == "skipped":
-                print(f"⏭️ Feedback loop skipped: {result.skipped_reason}")
-            else:
-                print(f"❌ Feedback loop failed: {result.error}")
-
-        except Exception as e:
-            print(f"❌ Feedback loop error: {e}")
-            print("   Continuing pipeline - feedback loop failures are non-critical")
-    else:
-        print("\n🔄 Feedback loop not due or not available")
+    return result
 
 
-def main():
+def _sync_gmail() -> None:
+    try:
+        from src.gmail_importer import run_import
+        report = run_import(dry_run=False)
+        logger.info(
+            f"gmail_sync_complete "
+            f"classified={report.emails_classified} "
+            f"updated={report.updates_applied} "
+            f"queued={report.queued_for_review}"
+        )
+    except Exception:
+        logger.exception("gmail_sync_failed")
+
+
+def _regenerate_dashboard(
+    orchestrator: Optional[FeedbackLoopOrchestrator],
+) -> None:
+    try:
+        html = build_dashboard(orchestrator=orchestrator)
+        DASHBOARD_FILE.write_text(html, encoding="utf-8")
+        logger.info(f"dashboard_written path={DASHBOARD_FILE}")
+    except Exception:
+        logger.exception("dashboard_generation_failed")
+
+
+def run_pipeline() -> None:
+    started = datetime.now()
+    logger.info(f"pipeline_start at={started.isoformat()}")
+
+    _init_db()
+    orchestrator = _build_orchestrator()
+    all_scored, matches = _fetch_and_score()
+    _persist_history(all_scored)
+    _notify(matches)
+    _apply_assistant(matches)
+    _sync_gmail()
+    _run_feedback_loop(orchestrator)
+    _regenerate_dashboard(orchestrator)
+
+    elapsed = (datetime.now() - started).total_seconds()
+    logger.info(f"pipeline_complete duration_s={elapsed:.1f}")
+
+
+def main() -> None:
     run_pipeline()
 
 
