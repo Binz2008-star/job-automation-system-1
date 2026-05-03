@@ -7,10 +7,16 @@ from src.telegram_bot import send_telegram_message, format_telegram_jobs
 from src.job_history import add_jobs_to_history
 from src.apply_assistant import run_apply_assistant
 from src.db import init_db, save_job, get_seen_links, is_db_available
+from src.profile import get_candidate_profile, get_target_roles
+from src.applications import load_applied_jobs
+from src.decision_engine import JobDecisionEngine
+from src.feedback_loop import FeedbackLoopOrchestrator
+from pathlib import Path
+import logging
 
 
 def run_pipeline():
-    """Execute the complete job hunting pipeline: fetch, filter, score, notify."""
+    """Execute the complete job hunting pipeline: fetch, filter, score, notify, learn."""
     # Initialize database if available
     if is_db_available():
         print("🗄️ Database available, initializing...")
@@ -18,6 +24,27 @@ def run_pipeline():
             print("✅ Database ready")
         else:
             print("⚠️ Database initialization failed, using JSON fallback")
+
+    # Initialize feedback loop orchestrator
+    print("🧠 Initializing feedback loop orchestrator...")
+    try:
+        profile = get_candidate_profile()
+        target_roles = get_target_roles()
+        decision_engine = JobDecisionEngine.from_loaders(lambda: profile, lambda: target_roles)
+
+        # Use project root for state directory
+        state_dir = Path(__file__).parent.parent / "data" / "feedback_state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+
+        orchestrator = FeedbackLoopOrchestrator.build(
+            decision_engine=decision_engine,
+            state_dir=state_dir,
+            cooldown=None  # Run daily, so no cooldown needed
+        )
+        print("✅ Feedback loop orchestrator initialized")
+    except Exception as e:
+        print(f"⚠️ Failed to initialize feedback loop: {e}")
+        orchestrator = None
 
     jobs = get_jobs()
     jobs = filter_new_jobs(jobs)
@@ -80,6 +107,35 @@ def run_pipeline():
             print(f"⚠️ Apply assistant error: {e}")
     else:
         print("No matches for apply assistant.")
+
+    # Run feedback loop learning cycle
+    if orchestrator and orchestrator.is_due():
+        print("\n🔄 Running feedback loop learning cycle...")
+        try:
+            # Load jobs and applications for learning
+            jobs_for_learning = [job for job, _ in all_scored_jobs]
+            applications = load_applied_jobs()
+
+            result = orchestrator.run_cycle_sync(
+                jobs_loader=lambda: jobs_for_learning,
+                apps_loader=lambda: applications
+            )
+
+            if result.status == "success":
+                print(f"✅ Feedback loop completed successfully")
+                print(f"   - Matched pairs: {result.matched_pairs}")
+                print(f"   - Adjustments version: {result.adjustments_version}")
+                print(f"   - Duration: {result.duration_seconds:.2f}s")
+            elif result.status == "skipped":
+                print(f"⏭️ Feedback loop skipped: {result.skipped_reason}")
+            else:
+                print(f"❌ Feedback loop failed: {result.error}")
+
+        except Exception as e:
+            print(f"❌ Feedback loop error: {e}")
+            print("   Continuing pipeline - feedback loop failures are non-critical")
+    else:
+        print("\n🔄 Feedback loop not due or not available")
 
 
 def main():

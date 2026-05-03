@@ -23,7 +23,11 @@ from typing import Dict, List, Any
 from src.db import get_top_jobs, get_application_stats, is_db_available, get_seen_links
 from src.job_history import load_job_history
 from src.applications import get_applied_jobs
-from src.decision_engine import JobDecisionEngine, generate_decision_insights
+from src.decision_engine import JobDecisionEngine
+from src.profile import get_candidate_profile, get_target_roles
+from src.feedback_loop import FeedbackLoopOrchestrator
+from src.response_intelligence import ResponseType
+from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 JOB_HISTORY_FILE = BASE_DIR / "data" / "job_history.json"
@@ -81,6 +85,243 @@ def get_confidence_emoji(score: int) -> str:
     return "⭐"
 
 
+def _load_feedback_state(orchestrator: FeedbackLoopOrchestrator = None) -> Dict[str, Any]:
+    """Load feedback loop state from orchestrator or disk."""
+    if orchestrator:
+        # Read directly from live orchestrator - zero disk I/O
+        state = orchestrator.cycle_state
+        adjustments = orchestrator.engine.current_adjustments
+
+        return {
+            "last_run_status": state.last_run_status,
+            "last_run_at": state.last_run_at,
+            "total_cycles": state.total_cycles,
+            "total_samples_processed": state.total_samples_processed,
+            "last_adjustments_version": state.last_adjustments_version,
+            "last_error": state.last_error,
+            "adjustments": adjustments.__dict__ if adjustments else {}
+        }
+    else:
+        # Load from disk for standalone mode
+        feedback_data = {
+            "last_run_status": "never",
+            "last_run_at": None,
+            "total_cycles": 0,
+            "total_samples_processed": 0,
+            "last_adjustments_version": 0,
+            "last_error": None,
+            "adjustments": {}
+        }
+
+        try:
+            # Use correct single state directory
+            state_dir = BASE_DIR / "data"
+            state_file = state_dir / "cycle_state.json"
+
+            if state_file.exists():
+                with open(state_file, 'r') as f:
+                    feedback_data.update(json.load(f))
+
+            # Load response intelligence adjustments
+            adjustments_file = state_dir / "scoring_adjustments.json"
+            if adjustments_file.exists():
+                with open(adjustments_file, 'r') as f:
+                    adjustments = json.load(f)
+                    feedback_data["adjustments"] = adjustments
+
+        except Exception as e:
+            feedback_data["error"] = str(e)
+
+        return feedback_data
+
+
+def _feedback_panel(feedback_data: Dict[str, Any]) -> str:
+    """Generate response intelligence panel HTML."""
+    status_color = {
+        "success": "var(--good)",
+        "failed": "var(--danger)",
+        "skipped": "var(--muted)",
+        "never": "var(--muted)"
+    }
+
+    last_status = feedback_data.get('last_run_status', 'never')
+    status_color_style = f"color: {status_color.get(last_status, 'var(--muted)')};"
+
+    panels = []
+    panels.append(f"""
+    <div class="grid two" style="margin-bottom:16px;">
+      <div>
+        <div class="bar-row">
+          <div class="bar-head"><span>Last Feedback Cycle</span><strong style="{status_color_style}">{last_status.title()}</strong></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-head"><span>Total Cycles</span><strong>{feedback_data.get('total_cycles', 0)}</strong></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-head"><span>Samples Processed</span><strong>{feedback_data.get('total_samples_processed', 0)}</strong></div>
+        </div>
+      </div>
+      <div>
+        <div class="bar-row">
+          <div class="bar-head"><span>Adjustments Version</span><strong>{feedback_data.get('last_adjustments_version', 0)}</strong></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-head"><span>Success Rate</span><strong>{feedback_data.get('success_rate', 0):.1f}%</strong></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-head"><span>Last Run</span><strong>{feedback_data.get('last_run_at', 'Never')[:10] if feedback_data.get('last_run_at') else 'Never'}</strong></div>
+        </div>
+      </div>
+    </div>
+    """)
+
+    # Error message
+    if feedback_data.get('last_error'):
+        panels.append(f'<div class="muted" style="color:var(--danger);">⚠️ Last error: {feedback_data.get("last_error")}</div>')
+
+    # Response patterns
+    response_patterns = feedback_data.get('response_patterns', {})
+    if response_patterns:
+        panels.append('<h3 style="margin-top:16px; margin-bottom:8px;">Response Patterns</h3>')
+        panels.append('<div class="grid two">')
+        for status, count in response_patterns.items():
+            panels.append(f'<div class="bar-row"><div class="bar-head"><span>{status.replace("_", " ").title()}</span><strong>{count}</strong></div></div>')
+        panels.append('</div>')
+
+    # Learning status
+    total_cycles = feedback_data.get('total_cycles', 0)
+    if total_cycles > 0:
+        panels.append(f'<div class="muted" style="margin-top:12px;">Learning active: {total_cycles} cycles completed</div>')
+    else:
+        panels.append('<div class="muted">Feedback loop ready - needs 5+ matched outcomes to start learning</div>')
+
+    return ''.join(panels)
+
+
+def _application_row(app):
+    """Generate HTML row for application data."""
+    title = escape(app.get("title") or "Untitled")
+    company = escape(app.get("company") or "Unknown")
+    status = app.get("status", "unknown")
+    applied_date = parse_dt(app.get("date_applied"))
+    date_str = applied_date.strftime("%Y-%m-%d") if applied_date else "Unknown"
+    notes = escape(app.get("notes", ""))[:50] + "..." if app.get("notes") else ""
+
+    status_colors = {
+        "saved": "var(--low)",
+        "opened": "var(--mid)",
+        "applied": "var(--accent)",
+        "interview": "var(--good)",
+        "offer": "#10b981",
+        "rejected": "var(--danger)"
+    }
+    color = status_colors.get(status, "var(--muted)")
+
+    return f"""
+    <tr>
+        <td><strong>{title}</strong><div class="muted">{company}</div></td>
+        <td><span class="pill" style="background:{color}; color:white">{status.title()}</span></td>
+        <td>{date_str}</td>
+        <td class="muted">{notes}</td>
+    </tr>
+    """
+
+
+def _job_row(job, show_confidence=False):
+    """Generate HTML row for job data."""
+    title = escape(job.get("title") or "Untitled")
+    company = escape(job.get("company") or "Unknown")
+    location = escape(job.get("location") or "Unknown")
+    score = int(job.get("score") or 0)
+    link = escape(job.get("link") or "#")
+    band = score_band(score)
+    confidence = get_confidence_emoji(score) if show_confidence else ""
+    explanation = escape(job.get("profile_explanation", ""))[:100] + "..." if job.get("profile_explanation") else ""
+
+    return f"""
+    <tr>
+        <td><a href="{link}" target="_blank">{title}</a><div class="muted">{company}</div></td>
+        <td>{location}</td>
+        <td><span class="pill {band.lower().replace(' ', '-')}">{band}</span></td>
+        <td class="score">{score} {confidence}</td>
+        {"<td class='explanation'>" + explanation + "</td>" if explanation else ""}
+    </tr>
+    """
+
+
+def _recent_section(recent_applications: List[Dict[str, Any]], recent_jobs: List[Dict[str, Any]]) -> str:
+    """Generate recent applications and jobs section HTML."""
+    if recent_applications:
+        # Show both applications and jobs
+        apps_html = f"""
+        <div class="card" style="margin-bottom:16px;">
+          <h2>Recent Applications</h2>
+          <table>
+            <thead><tr><th>Role</th><th>Status</th><th>Date</th><th>Notes</th></tr></thead>
+            <tbody>{''.join(_application_row(app) for app in recent_applications)}</tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h2>Recent Jobs</h2>
+          <table>
+            <thead><tr><th>Role</th><th>Location</th><th>Quality</th><th>Score</th></tr></thead>
+            <tbody>{''.join(_job_row(job) for job in recent_jobs)}</tbody>
+          </table>
+        </div>
+        """
+        return f'<div class="grid two">{apps_html}</div>'
+    else:
+        # Show only jobs
+        jobs_html = f"""
+        <div class="card">
+          <h2>Recent Jobs</h2>
+          <table>
+            <thead><tr><th>Role</th><th>Location</th><th>Quality</th><th>Score</th></tr></thead>
+            <tbody>{''.join(_job_row(job) for job in recent_jobs)}</tbody>
+          </table>
+        </div>
+        """
+        return jobs_html
+
+
+def load_feedback_loop_data(orchestrator: FeedbackLoopOrchestrator = None) -> Dict[str, Any]:
+    """Load feedback loop state and intelligence data."""
+    feedback_data = _load_feedback_state(orchestrator)
+
+    # Analyze response patterns from applications
+    try:
+        applications = get_applied_jobs()
+        if applications:
+            status_counts = {}
+            for app in applications:
+                status = app.get("status", "unknown")
+                # Normalize status using ResponseType aliases
+                try:
+                    response_type = ResponseType.from_raw(status)
+                    normalized_status = response_type.value
+                except:
+                    normalized_status = status
+
+                status_counts[normalized_status] = status_counts.get(normalized_status, 0) + 1
+
+            feedback_data["response_patterns"] = status_counts
+
+            # Calculate success metrics
+            total_responses = sum(status_counts.values())
+            positive_responses = sum(count for status, count in status_counts.items()
+                                 if status in ["interview_scheduled", "interview_completed", "technical_assessment", "offer_extended", "offer_accepted"])
+
+            if total_responses > 0:
+                feedback_data["success_rate"] = (positive_responses / total_responses) * 100
+            else:
+                feedback_data["success_rate"] = 0
+
+    except Exception as e:
+        feedback_data["analysis_error"] = str(e)
+
+    return feedback_data
+
+
 def load_dashboard_data() -> Dict[str, Any]:
     """Load dashboard data from database with JSON fallback."""
     # Try database first
@@ -121,15 +362,24 @@ def load_dashboard_data() -> Dict[str, Any]:
     jobs = load_json(JOB_HISTORY_FILE, [])
     applications = load_json(APPLIED_JOBS_FILE, [])
 
-    # Calculate application stats manually
-    status_counts = Counter(a.get("status", "unknown") for a in applications)
+    # Calculate application stats manually with normalized statuses
+    normalized_statuses = []
+    for app in applications:
+        status = app.get("status", "unknown")
+        try:
+            response_type = ResponseType.from_raw(status)
+            normalized_statuses.append(response_type.value)
+        except:
+            normalized_statuses.append(status)
+
+    status_counts = Counter(normalized_statuses)
     app_stats = {
         'total_applied': len(applications),
         'status_breakdown': dict(status_counts),
-        'interviews_scheduled': status_counts.get("interview", 0),
+        'interviews_scheduled': status_counts.get("interview_scheduled", 0) + status_counts.get("interview", 0),
         'rejections': status_counts.get("rejected", 0),
         'pending': status_counts.get("applied", 0),
-        'success_rate': (status_counts.get("interview", 0) / len(applications) * 100) if applications else 0.0
+        'success_rate': ((status_counts.get("interview_scheduled", 0) + status_counts.get("interview", 0)) / len(applications) * 100) if applications else 0.0
     }
 
     return {
@@ -140,13 +390,16 @@ def load_dashboard_data() -> Dict[str, Any]:
     }
 
 
-def build_dashboard() -> str:
+def build_dashboard(orchestrator: FeedbackLoopOrchestrator = None) -> str:
     """Build enhanced dashboard HTML."""
     data = load_dashboard_data()
     jobs = data['jobs']
     applications = data['applications']
     app_stats = data['app_stats']
     data_source = data['source']
+
+    # Load feedback loop data
+    feedback_data = load_feedback_loop_data(orchestrator)
 
     now = datetime.now()
     week_ago = now - timedelta(days=7)
@@ -197,52 +450,6 @@ def build_dashboard() -> str:
         </div>
         """
 
-    def job_row(job, show_confidence=False):
-        title = escape(job.get("title") or "Untitled")
-        company = escape(job.get("company") or "Unknown")
-        location = escape(job.get("location") or "Unknown")
-        score = int(job.get("score") or 0)
-        link = escape(job.get("link") or "#")
-        band = score_band(score)
-        confidence = get_confidence_emoji(score) if show_confidence else ""
-        explanation = escape(job.get("profile_explanation", ""))[:100] + "..." if job.get("profile_explanation") else ""
-
-        return f"""
-        <tr>
-            <td><a href="{link}" target="_blank">{title}</a><div class="muted">{company}</div></td>
-            <td>{location}</td>
-            <td><span class="pill {band.lower().replace(' ', '-')}">{band}</span></td>
-            <td class="score">{score} {confidence}</td>
-            {"<td class='explanation'>" + explanation + "</td>" if explanation else ""}
-        </tr>
-        """
-
-    def application_row(app):
-        title = escape(app.get("title") or "Untitled")
-        company = escape(app.get("company") or "Unknown")
-        status = app.get("status", "unknown")
-        applied_date = parse_dt(app.get("date_applied"))
-        date_str = applied_date.strftime("%Y-%m-%d") if applied_date else "Unknown"
-        notes = escape(app.get("notes", ""))[:50] + "..." if app.get("notes") else ""
-
-        status_colors = {
-            "saved": "var(--low)",
-            "opened": "var(--mid)",
-            "applied": "var(--accent)",
-            "interview": "var(--good)",
-            "offer": "#10b981",
-            "rejected": "var(--danger)"
-        }
-        color = status_colors.get(status, "var(--muted)")
-
-        return f"""
-        <tr>
-            <td><strong>{title}</strong><div class="muted">{company}</div></td>
-            <td><span class="pill" style="background:{color}; color:white">{status.title()}</span></td>
-            <td>{date_str}</td>
-            <td class="muted">{notes}</td>
-        </tr>
-        """
 
     html = f"""<!doctype html>
 <html lang="en">
@@ -333,7 +540,13 @@ a:hover {{ color:#38bdf8; }}
       <div class="step"><strong>3. Score</strong><span>CV-aware match score</span></div>
       <div class="step"><strong>4. Notify</strong><span>Email + Telegram</span></div>
       <div class="step"><strong>5. Apply</strong><span>Track applications</span></div>
+      <div class="step"><strong>6. Learn</strong><span>Feedback loop intelligence</span></div>
     </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h2>🧠 Response Intelligence</h2>
+    {_feedback_panel(feedback_data)}
   </div>
 
   <div class="grid two">
@@ -376,35 +589,11 @@ a:hover {{ color:#38bdf8; }}
     <h2>Top Jobs by Score {f'(🗄️ {data_source.title()})'}</h2>
     <table>
       <thead><tr><th>Role</th><th>Location</th><th>Quality</th><th>Score</th><th>Why it matches</th></tr></thead>
-      <tbody>{''.join(job_row(job, show_confidence=True) for job in top_jobs)}</tbody>
+      <tbody>{''.join(_job_row(job, show_confidence=True) for job in top_jobs)}</tbody>
     </table>
   </div>
 
-  {"<div class='grid two'>" if recent_applications else ""}
-  {"<div class='card' style='margin-bottom:16px;'>" if recent_applications else ""}
-  {"<h2>Recent Applications</h2>" if recent_applications else ""}
-  {"<table>" if recent_applications else ""}
-  {"<thead><tr><th>Role</th><th>Status</th><th>Date</th><th>Notes</th></tr></thead>" if recent_applications else ""}
-  {"<tbody>" + ''.join(application_row(app) for app in recent_applications) + "</tbody>" if recent_applications else ""}
-  {"</table>" if recent_applications else ""}
-  {"</div>" if recent_applications else ""}
-
-  {"<div class='card'>" if recent_applications else ""}
-  {"<h2>Recent Jobs</h2>" if recent_applications else ""}
-  {"<table>" if recent_applications else ""}
-  {"<thead><tr><th>Role</th><th>Location</th><th>Quality</th><th>Score</th></tr></thead>" if recent_applications else ""}
-  {"<tbody>" + ''.join(job_row(job) for job in recent_jobs) + "</tbody>" if recent_applications else ""}
-  {"</table>" if recent_applications else ""}
-  {"</div>" if recent_applications else ""}
-  {"</div>" if recent_applications else ""}
-
-  {"<div class='card'>" if not recent_applications else ""}
-  {"<h2>Recent Jobs</h2>" if not recent_applications else ""}
-  {"<table>" if not recent_applications else ""}
-  {"<thead><tr><th>Role</th><th>Location</th><th>Quality</th><th>Score</th></tr></thead>" if not recent_applications else ""}
-  {"<tbody>" + ''.join(job_row(job) for job in recent_jobs) + "</tbody>" if not recent_applications else ""}
-  {"</table>" if not recent_applications else ""}
-  {"</div>" if not recent_applications else ""}
+  {_recent_section(recent_applications, recent_jobs)}
 
   <div class="footer">
     Data source: {data_source.title()}.
