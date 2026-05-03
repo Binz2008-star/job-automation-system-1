@@ -28,7 +28,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, Tuple
 
-from src.decision_engine import (
+from src.decision_engine_v2 import (
     EngineConfig,
     JobDecisionEngine,
     ProbabilityResult,
