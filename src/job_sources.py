@@ -1,4 +1,4 @@
-from jobspy import scrape_jobs
+from python_jobspy import scrape_jobs
 import logging
 import time
 
@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 
 _QUERIES = [
     "ESG Manager",
-    "HSE Manager", 
+    "HSE Manager",
     "Environmental Compliance Manager",
     "Sustainability Manager",
     "Operations Manager Environmental",
