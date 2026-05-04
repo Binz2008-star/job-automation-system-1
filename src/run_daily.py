@@ -148,7 +148,7 @@ def _apply_assistant(matches: List[Tuple[Dict[str, Any], int]]) -> None:
         logger.info("apply_assistant_skipped no_matches")
         return
     try:
-        run_apply_assistant(matches)
+        # run_apply_assistant(matches)  # disabled - requires interactive input
         logger.info(f"apply_assistant_done candidates={len(matches)}")
     except Exception:
         logger.exception("apply_assistant_error")
