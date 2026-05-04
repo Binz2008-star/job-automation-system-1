@@ -47,6 +47,7 @@ def _save_cache(c):
 def _embed(texts):
     h = {"Content-Type": "application/json"}
     t = os.getenv("HF_TOKEN","")
+    t = t.strip()
     if t: h["Authorization"] = f"Bearer {t}"
     for attempt in range(3):
         try:
