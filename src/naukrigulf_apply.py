@@ -130,15 +130,16 @@ class NGApplyStatus(str, Enum):
     SUCCESS            = "success"
     ALREADY_APPLIED    = "already_applied"
     DISABLED           = "disabled"
-    RATE_LIMITED       = "rate_limited"
-    SPAM_FILTERED      = "spam_filtered"
+    SESSION_EXPIRED    = "session_expired"
+    NETWORK_BLOCKED    = "network_blocked"
+    SPAM_FILTERED     = "spam_filtered"
     TOO_OLD            = "too_old"
+    RATE_LIMITED       = "rate_limited"
+    DRY_RUN            = "dry_run"
+    FAILED             = "failed"
     NO_APPLY_BUTTON    = "no_apply_button"
     EXTERNAL_REDIRECT  = "external_redirect"
     SCREENING_REQUIRED = "screening_required"
-    SESSION_EXPIRED    = "session_expired"
-    DRY_RUN            = "dry_run"
-    FAILED             = "failed"
 
 
 @dataclass
@@ -390,10 +391,19 @@ class NaukriGulfApplyEngine:
             return []
 
         if not self._check_session():
-            logger.error("ng_session_expired login manually then re-run")
-            return [NGApplyResult(
-                job_id="", title="", company="",
-                status=NGApplyStatus.SESSION_EXPIRED,
+            # Check if this was a network block vs real session issue
+            error_str = str(self._last_session_error).lower() if hasattr(self, '_last_session_error') else ""
+            if "timeout" in error_str or "network" in error_str:
+                logger.error("ng_network_blocked_or_timeout - GitHub runner cannot reach NaukriGulf")
+                return [NGApplyResult(
+                    job_id="", title="", company="",
+                    status=NGApplyStatus.NETWORK_BLOCKED,
+                )]
+            else:
+                logger.error("ng_session_expired login manually then re-run")
+                return [NGApplyResult(
+                    job_id="", title="", company="",
+                    status=NGApplyStatus.SESSION_EXPIRED,
                 message="NaukriGulf session expired — open browser and log in",
             )]
 
@@ -522,6 +532,8 @@ class NaukriGulfApplyEngine:
             error_str = str(exc).lower()
             if "timeout" in error_str or "network" in error_str or "connection" in error_str:
                 logger.warning("ng_network_blocked_or_timeout error=%s", exc)
+                # Store error for run() method to check
+                self._last_session_error = exc
                 # Don't record as session failure - this is a network issue
                 return False
             else:
