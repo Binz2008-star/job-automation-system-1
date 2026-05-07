@@ -73,6 +73,7 @@ def _env_int(k: str, d: int) -> int:
 NG_ENABLED        = _env_bool("NG_ENABLED", False)
 NG_DRY_RUN        = _env_bool("NG_DRY_RUN", False)
 NG_HEADLESS       = _env_bool("NG_HEADLESS", False)
+NG_FORCE_GITHUB_BROWSER = _env_bool("NG_FORCE_GITHUB_BROWSER", False)
 NG_MAX_PER_RUN    = _env_int("NG_MAX_PER_RUN", 3)
 NG_COOLDOWN       = _env_int("NG_COOLDOWN_SECONDS", 120)
 NG_DAILY_LIMIT    = _env_int("NG_DAILY_LIMIT", 15)
@@ -389,6 +390,16 @@ class NaukriGulfApplyEngine:
         if not NG_ENABLED:
             logger.info("ng_apply_disabled NG_ENABLED=false")
             return []
+
+        # Skip browser automation on GitHub-hosted runners unless explicitly forced
+        if os.getenv("GITHUB_ACTIONS") == "true" and not NG_FORCE_GITHUB_BROWSER:
+            logger.warning("ng_skipped_github_hosted_runner - browser automation blocked on GitHub Actions")
+            logger.info("Use self-hosted runner or set NG_FORCE_GITHUB_BROWSER=true to override")
+            return [NGApplyResult(
+                job_id="", title="", company="",
+                status=NGApplyStatus.DISABLED,
+                message="Skipped: GitHub-hosted runner cannot reach NaukriGulf. Use self-hosted runner for browser automation."
+            )]
 
         if not self._check_session():
             # Check if this was a network block vs real session issue
