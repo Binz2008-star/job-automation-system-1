@@ -34,6 +34,10 @@ JOB_HISTORY_FILE = BASE_DIR / "data" / "job_history.json"
 APPLIED_JOBS_FILE = BASE_DIR / "data" / "applied_jobs.json"
 OUTPUT_FILE = BASE_DIR / "dashboard.html"
 
+# Application sources — keep in sync with importer/pipeline constants
+_IMPORTED_SOURCES: frozenset[str] = frozenset({"linkedin_import"})
+_GMAIL_SOURCES: frozenset[str] = frozenset({"gmail"})
+
 
 def load_json(path: Path, default):
     """Load JSON file with fallback."""
@@ -88,7 +92,6 @@ def get_confidence_emoji(score: int) -> str:
 def _load_feedback_state(orchestrator: FeedbackLoopOrchestrator = None) -> Dict[str, Any]:
     """Load feedback loop state from orchestrator or disk."""
     if orchestrator:
-        # Read directly from live orchestrator - zero disk I/O
         state = orchestrator.cycle_state
         adjustments = orchestrator.engine.current_adjustments
 
@@ -102,7 +105,6 @@ def _load_feedback_state(orchestrator: FeedbackLoopOrchestrator = None) -> Dict[
             "adjustments": adjustments.__dict__ if adjustments else {}
         }
     else:
-        # Load from disk for standalone mode
         feedback_data = {
             "last_run_status": "never",
             "last_run_at": None,
@@ -114,7 +116,6 @@ def _load_feedback_state(orchestrator: FeedbackLoopOrchestrator = None) -> Dict[
         }
 
         try:
-            # Use correct single state directory
             state_dir = BASE_DIR / "data"
             state_file = state_dir / "cycle_state.json"
 
@@ -122,7 +123,6 @@ def _load_feedback_state(orchestrator: FeedbackLoopOrchestrator = None) -> Dict[
                 with open(state_file, 'r') as f:
                     feedback_data.update(json.load(f))
 
-            # Load response intelligence adjustments
             adjustments_file = state_dir / "scoring_adjustments.json"
             if adjustments_file.exists():
                 with open(adjustments_file, 'r') as f:
@@ -175,11 +175,9 @@ def _feedback_panel(feedback_data: Dict[str, Any]) -> str:
     </div>
     """)
 
-    # Error message
     if feedback_data.get('last_error'):
         panels.append(f'<div class="muted" style="color:var(--danger);">⚠️ Last error: {feedback_data.get("last_error")}</div>')
 
-    # Response patterns
     response_patterns = feedback_data.get('response_patterns', {})
     if response_patterns:
         panels.append('<h3 style="margin-top:16px; margin-bottom:8px;">Response Patterns</h3>')
@@ -188,7 +186,6 @@ def _feedback_panel(feedback_data: Dict[str, Any]) -> str:
             panels.append(f'<div class="bar-row"><div class="bar-head"><span>{status.replace("_", " ").title()}</span><strong>{count}</strong></div></div>')
         panels.append('</div>')
 
-    # Learning status
     total_cycles = feedback_data.get('total_cycles', 0)
     if total_cycles > 0:
         panels.append(f'<div class="muted" style="margin-top:12px;">Learning active: {total_cycles} cycles completed</div>')
@@ -252,7 +249,6 @@ def _job_row(job, show_confidence=False):
 def _recent_section(recent_applications: List[Dict[str, Any]], recent_jobs: List[Dict[str, Any]]) -> str:
     """Generate recent applications and jobs section HTML."""
     if recent_applications:
-        # Show both applications and jobs
         apps_html = f"""
         <div class="card" style="margin-bottom:16px;">
           <h2>Recent Applications</h2>
@@ -271,7 +267,6 @@ def _recent_section(recent_applications: List[Dict[str, Any]], recent_jobs: List
         """
         return f'<div class="grid two">{apps_html}</div>'
     else:
-        # Show only jobs
         jobs_html = f"""
         <div class="card">
           <h2>Recent Jobs</h2>
@@ -288,14 +283,12 @@ def load_feedback_loop_data(orchestrator: FeedbackLoopOrchestrator = None) -> Di
     """Load feedback loop state and intelligence data."""
     feedback_data = _load_feedback_state(orchestrator)
 
-    # Analyze response patterns from applications
     try:
         applications = get_applied_jobs()
         if applications:
             status_counts = {}
             for app in applications:
                 status = app.get("status", "unknown")
-                # Normalize status using ResponseType aliases
                 try:
                     response_type = ResponseType.from_raw(status)
                     normalized_status = response_type.value
@@ -306,7 +299,6 @@ def load_feedback_loop_data(orchestrator: FeedbackLoopOrchestrator = None) -> Di
 
             feedback_data["response_patterns"] = status_counts
 
-            # Calculate success metrics
             total_responses = sum(status_counts.values())
             positive_responses = sum(count for status, count in status_counts.items()
                                  if status in ["interview_scheduled", "interview_completed", "technical_assessment", "offer_extended", "offer_accepted"])
@@ -324,14 +316,11 @@ def load_feedback_loop_data(orchestrator: FeedbackLoopOrchestrator = None) -> Di
 
 def load_dashboard_data() -> Dict[str, Any]:
     """Load dashboard data from database with JSON fallback."""
-    # Try database first
     if is_db_available():
         try:
-            # Get jobs from database
-            top_jobs = get_top_jobs(50)  # Get more jobs for dashboard
+            top_jobs = get_top_jobs(50)
             jobs = []
 
-            # Convert database format to dashboard format
             for job in top_jobs:
                 jobs.append({
                     'title': job.get('title', ''),
@@ -344,7 +333,6 @@ def load_dashboard_data() -> Dict[str, Any]:
                     'source': job.get('source', 'jobspy')
                 })
 
-            # Get application stats from database
             app_stats = get_application_stats()
             applications = get_applied_jobs()
 
@@ -358,11 +346,9 @@ def load_dashboard_data() -> Dict[str, Any]:
         except Exception as e:
             print(f"⚠️ Database dashboard failed, using JSON fallback: {e}")
 
-    # Fallback to JSON files
     jobs = load_json(JOB_HISTORY_FILE, [])
     applications = load_json(APPLIED_JOBS_FILE, [])
 
-    # Calculate application stats manually with normalized statuses
     normalized_statuses = []
     for app in applications:
         status = app.get("status", "unknown")
@@ -398,7 +384,6 @@ def build_dashboard(orchestrator: FeedbackLoopOrchestrator = None) -> str:
     app_stats = data['app_stats']
     data_source = data['source']
 
-    # Load feedback loop data
     feedback_data = load_feedback_loop_data(orchestrator)
 
     now = datetime.now()
@@ -409,7 +394,19 @@ def build_dashboard(orchestrator: FeedbackLoopOrchestrator = None) -> str:
     very_high_quality = [j for j in jobs if int(j.get("score") or 0) >= 85]
     week_jobs = [j for j in jobs if (parse_dt(j.get("date_found")) or datetime.min) >= week_ago]
 
-    applied_count = len(applications)
+    # ── Application source segmentation ──────────────────────────────────────
+    # "pipeline" = originated from the fetch→score→apply loop.
+    # "linkedin_import" = bulk-imported from LinkedIn export; excluded from
+    #                     apply-rate to avoid inflating the metric.
+    # "gmail" = auto-imported from confirmation emails.
+    applied_count   = len(applications)
+    pipeline_apps   = [a for a in applications
+                       if a.get("source", "pipeline") not in _IMPORTED_SOURCES]
+    linkedin_apps   = [a for a in applications if a.get("source") in _IMPORTED_SOURCES]
+    gmail_apps      = [a for a in applications if a.get("source") in _GMAIL_SOURCES]
+    pipeline_count  = len(pipeline_apps)
+    # ─────────────────────────────────────────────────────────────────────────
+
     status_counts = Counter(a.get("status", "unknown") for a in applications)
     interviews = status_counts.get("interview", 0)
     rejections = status_counts.get("rejected", 0)
@@ -528,7 +525,7 @@ a:hover {{ color:#38bdf8; }}
     {stat_card('Very High Quality', len(very_high_quality), f'{pct(len(very_high_quality), len(jobs))} of tracked jobs', '#10b981')}
     {stat_card('High Quality', len(high_quality), f'{pct(len(high_quality), len(jobs))} of tracked jobs', '#22c55e')}
     {stat_card('Average Score', f'{avg_score:.1f}', f'Best score: {max_score}')}
-    {stat_card('Applications', applied_count, f'{pending} pending · {interviews} interviews · {offers} offers')}
+    {stat_card('Applications', applied_count, f'{pipeline_count} pipeline · {len(linkedin_apps)} imported · {len(gmail_apps)} gmail')}
     {stat_card('Success Rate', f'{app_stats.get("success_rate", 0):.1f}%', f'{interviews}/{applied_count} interviews')}
   </div>
 
@@ -579,8 +576,8 @@ a:hover {{ color:#38bdf8; }}
         <div class="bar-bg"><div class="bar-fill" style="width:{min(100, (len(week_jobs)/7)*10)}%"></div></div>
       </div>
       <div class="bar-row">
-        <div class="bar-head"><span>Apply Rate</span><strong>{pct(applied_count, len(jobs))}</strong></div>
-        <div class="bar-bg"><div class="bar-fill" style="width:{min(100, (applied_count/len(jobs))*100) if jobs else 0}%"></div></div>
+        <div class="bar-head"><span>Apply Rate (pipeline)</span><strong>{pct(pipeline_count, len(jobs))}</strong></div>
+        <div class="bar-bg"><div class="bar-fill" style="width:{min(100, (pipeline_count/len(jobs))*100) if jobs else 0}%"></div></div>
       </div>
     </div>
   </div>
