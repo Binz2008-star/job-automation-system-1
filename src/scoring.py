@@ -20,7 +20,7 @@ def score_job(job):
     exclude_keywords_str = os.getenv("EXCLUDE_KEYWORDS", "")
     exclude_keywords = [kw.strip().lower() for kw in exclude_keywords_str.split(",") if kw.strip()]
     if exclude_keywords:
-        exclude_matches = [kw for kw in exclude_keywords if kw in title]
+        exclude_matches = [kw for kw in exclude_keywords if kw in job_text]
         if exclude_matches:
             # Hard penalty - make score very low
             score = -50

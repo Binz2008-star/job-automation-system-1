@@ -67,6 +67,7 @@ jobs:
           NG_SCORE_THRESHOLD: ${{ secrets.NG_SCORE_THRESHOLD }}
           NAUKRIGULF_EMAIL: ${{ secrets.NAUKRIGULF_EMAIL }}
           NAUKRIGULF_PASSWORD: ${{ secrets.NAUKRIGULF_PASSWORD }}
+          EXCLUDE_KEYWORDS: ${{ secrets.EXCLUDE_KEYWORDS }}
         run: python -m src.run_daily
 
       - name: Run follow-up reminders
