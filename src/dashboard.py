@@ -49,6 +49,28 @@ def load_json(path: Path, default):
         return default
 
 
+def load_ng_telemetry() -> Dict[str, Any]:
+    """Load NaukriGulf telemetry data."""
+    try:
+        ng_rate_file = BASE_DIR / "data" / "ng_apply_rate.json"
+        if ng_rate_file.exists():
+            with open(ng_rate_file, 'r') as f:
+                return json.load(f)
+    except Exception:
+        pass
+
+    return {
+        'session_status': 'UNKNOWN',
+        'captcha_failures': 0,
+        'apply_successes': 0,
+        'apply_failures': 0,
+        'avg_apply_time': 0,
+        'last_successful_apply': None,
+        'daily_applies': 0,
+        'excluded_jobs': []
+    }
+
+
 def parse_dt(value: str | None):
     """Parse datetime string."""
     if not value:
@@ -57,6 +79,56 @@ def parse_dt(value: str | None):
         return datetime.fromisoformat(value)
     except ValueError:
         return None
+
+
+def calculate_effectiveness_metrics(jobs: List[Dict], applications: List[Dict]) -> Dict[str, Any]:
+    """Calculate true effectiveness metrics instead of vanity metrics."""
+    # Target keywords for relevant roles
+    target_keywords = {
+        "hse", "qhse", "ehs", "hsse", "safety", "environment", "environmental",
+        "sustainability", "compliance", "risk", "operations", "operational",
+        "project director", "contracts manager", "contracts lead"
+    }
+
+    # Count relevant jobs
+    relevant_jobs = []
+    excluded_jobs = []
+    for job in jobs:
+        title = job.get("title", "").lower()
+        if any(keyword in title for keyword in target_keywords):
+            relevant_jobs.append(job)
+        else:
+            excluded_jobs.append(job)
+
+    # Calculate metrics
+    total_jobs = len(jobs)
+    relevant_count = len(relevant_jobs)
+    relevant_rate = (relevant_count / total_jobs * 100) if total_jobs > 0 else 0
+
+    # Application funnel metrics
+    total_applications = len(applications)
+    interviews = sum(1 for app in applications if app.get("status") in ["interview", "interview_scheduled"])
+    interview_rate = (interviews / total_applications * 100) if total_applications > 0 else 0
+
+    # Split imported vs real applications
+    pipeline_apps = [a for a in applications if a.get("source", "pipeline") not in _IMPORTED_SOURCES]
+    imported_apps = [a for a in applications if a.get("source") in _IMPORTED_SOURCES]
+
+    # Top excluded jobs for tuning
+    excluded_by_title = Counter(job.get("title", "Unknown") for job in excluded_jobs[:10])
+
+    return {
+        'relevant_roles_rate': relevant_rate,
+        'relevant_count': relevant_count,
+        'total_jobs': total_jobs,
+        'interview_rate': interview_rate,
+        'interviews': interviews,
+        'total_applications': total_applications,
+        'pipeline_applications': len(pipeline_apps),
+        'imported_applications': len(imported_apps),
+        'false_positive_rate': 100 - relevant_rate,
+        'top_excluded_jobs': excluded_by_title.most_common(5)
+    }
 
 
 def score_band(score: int | float) -> str:
@@ -226,7 +298,7 @@ def _application_row(app):
 
 
 def _job_row(job, show_confidence=False):
-    """Generate HTML row for job data."""
+    """Generate HTML row for job data with score-based button logic."""
     title = escape(job.get("title") or "Untitled")
     company = escape(job.get("company") or "Unknown")
     location = escape(job.get("location") or "Unknown")
@@ -236,6 +308,101 @@ def _job_row(job, show_confidence=False):
     confidence = get_confidence_emoji(score) if show_confidence else ""
     explanation = escape(job.get("profile_explanation", ""))[:100] + "..." if job.get("profile_explanation") else ""
 
+    # Get score thresholds from environment
+    import os
+    auto_apply_score = int(os.getenv("AUTO_APPLY_SCORE", "85"))
+    manual_approval_score = int(os.getenv("MANUAL_APPROVAL_SCORE", "65"))
+
+    # Safety check for apply button
+    can_apply = "naukrigulf.com" in link.lower()
+    job_json = escape(json.dumps(job))
+
+    # Three-tier button logic based on score
+    if not can_apply:
+        action_buttons = """
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        """
+    elif score >= auto_apply_score:
+        # High confidence - Auto Apply badge
+        action_buttons = f"""
+        <td>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span class="pill" style="background: #10b981; color: white; font-size: 11px;">
+              🤖 Auto Apply
+            </span>
+            <button
+              class="apply-btn"
+              onclick="applyJob(this)"
+              data-job='{job_json}'
+              style="background: var(--good);">
+              ✅ Apply
+            </button>
+          </div>
+        </td>
+        """
+    elif score >= manual_approval_score:
+        # Medium confidence - Manual approval buttons
+        action_buttons = f"""
+        <td>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <button
+              class="apply-btn"
+              onclick="applyJob(this)"
+              data-job='{job_json}'
+              style="background: var(--accent); font-size: 12px; padding: 6px 10px;">
+              🚀 Apply
+            </button>
+            <button
+              class="apply-btn"
+              onclick="skipJob(this)"
+              data-job='{job_json}'
+              style="background: var(--muted); font-size: 12px; padding: 6px 10px;">
+              ⏭️ Skip
+            </button>
+            <button
+              class="apply-btn"
+              onclick="openJob(this)"
+              data-link='{link}'
+              style="background: var(--low); font-size: 12px; padding: 6px 10px;">
+              � Open
+            </button>
+          </div>
+        </td>
+        """
+    else:
+        # Low confidence - Skip/Watch only
+        action_buttons = f"""
+        <td>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <button
+              class="apply-btn"
+              onclick="skipJob(this)"
+              data-job='{job_json}'
+              style="background: var(--muted); font-size: 12px; padding: 6px 10px;">
+              ⏭️ Skip
+            </button>
+            <button
+              class="apply-btn"
+              onclick="openJob(this)"
+              data-link='{link}'
+              style="background: var(--low); font-size: 12px; padding: 6px 10px;">
+              🔗 Open
+            </button>
+            <button
+              class="apply-btn"
+              onclick="blockSimilar(this)"
+              data-job='{job_json}'
+              style="background: var(--danger); font-size: 12px; padding: 6px 10px;">
+              🚫 Block
+            </button>
+          </div>
+        </td>
+        """
+
     return f"""
     <tr>
         <td><a href="{link}" target="_blank">{title}</a><div class="muted">{company}</div></td>
@@ -243,6 +410,7 @@ def _job_row(job, show_confidence=False):
         <td><span class="pill {band.lower().replace(' ', '-')}">{band}</span></td>
         <td class="score">{score} {confidence}</td>
         {"<td class='explanation'>" + explanation + "</td>" if explanation else ""}
+        {action_buttons}
     </tr>
     """
 
@@ -261,7 +429,7 @@ def _recent_section(recent_applications: List[Dict[str, Any]], recent_jobs: List
         <div class="card">
           <h2>Recent Jobs</h2>
           <table>
-            <thead><tr><th>Role</th><th>Location</th><th>Quality</th><th>Score</th></tr></thead>
+            <thead><tr><th>Role</th><th>Location</th><th>Quality</th><th>Score</th><th>Action</th></tr></thead>
             <tbody>{''.join(_job_row(job) for job in recent_jobs)}</tbody>
           </table>
         </div>
@@ -272,7 +440,7 @@ def _recent_section(recent_applications: List[Dict[str, Any]], recent_jobs: List
         <div class="card">
           <h2>Recent Jobs</h2>
           <table>
-            <thead><tr><th>Role</th><th>Location</th><th>Quality</th><th>Score</th></tr></thead>
+            <thead><tr><th>Role</th><th>Location</th><th>Quality</th><th>Score</th><th>Action</th></tr></thead>
             <tbody>{''.join(_job_row(job) for job in recent_jobs)}</tbody>
           </table>
         </div>
@@ -337,10 +505,14 @@ def load_dashboard_data() -> Dict[str, Any]:
             app_stats = get_application_stats()
             applications = get_applied_jobs()
 
+            # Load NG telemetry data
+            ng_telemetry = load_ng_telemetry()
+
             return {
                 'jobs': jobs,
                 'applications': applications,
                 'app_stats': app_stats,
+                'ng_telemetry': ng_telemetry,
                 'source': 'database'
             }
 
@@ -383,6 +555,7 @@ def build_dashboard(orchestrator: FeedbackLoopOrchestrator = None) -> str:
     jobs = data['jobs']
     applications = data['applications']
     app_stats = data['app_stats']
+    ng_telemetry = data.get('ng_telemetry', {})
     data_source = data['source']
 
     feedback_data = load_feedback_loop_data(orchestrator)
@@ -390,6 +563,9 @@ def build_dashboard(orchestrator: FeedbackLoopOrchestrator = None) -> str:
     # Initialize PDF system
     pdf_manager = initialize_pdf_system()
     cv_pdf = pdf_manager.get_cv_pdf()
+
+    # Calculate true effectiveness metrics
+    effectiveness_metrics = calculate_effectiveness_metrics(jobs, applications)
 
     now = datetime.now()
     week_ago = now - timedelta(days=7)
@@ -526,12 +702,12 @@ a:hover {{ color:#38bdf8; }}
   </div>
 
   <div class="grid stats">
-    {stat_card('Jobs tracked', len(jobs), f'{len(week_jobs)} found in last 7 days')}
-    {stat_card('Very High Quality', len(very_high_quality), f'{pct(len(very_high_quality), len(jobs))} of tracked jobs', '#10b981')}
-    {stat_card('High Quality', len(high_quality), f'{pct(len(high_quality), len(jobs))} of tracked jobs', '#22c55e')}
-    {stat_card('Average Score', f'{avg_score:.1f}', f'Best score: {max_score}')}
-    {stat_card('Applications', applied_count, f'{pipeline_count} pipeline · {len(linkedin_apps)} imported · {len(gmail_apps)} gmail')}
-    {stat_card('Success Rate', f'{app_stats.get("success_rate", 0):.1f}%', f'{interviews}/{applied_count} interviews')}
+    {stat_card('Relevant Roles', f'{effectiveness_metrics["relevant_roles_rate"]:.1f}%', f'{effectiveness_metrics["relevant_count"]}/{effectiveness_metrics["total_jobs"]} jobs match target domains', '#10b981')}
+    {stat_card('Interview Rate', f'{effectiveness_metrics["interview_rate"]:.1f}%', f'{effectiveness_metrics["interviews"]}/{effectiveness_metrics["total_applications"]} applications')}
+    {stat_card('Pipeline Applications', effectiveness_metrics["pipeline_applications"], f'{effectiveness_metrics["imported_applications"]} imported from history')}
+    {stat_card('False Positive Rate', f'{effectiveness_metrics["false_positive_rate"]:.1f}%', 'Non-relevant jobs detected')}
+    {stat_card('NG Session', ng_telemetry.get('session_status', 'UNKNOWN'), f'Success: {ng_telemetry.get("apply_successes", 0)} · Failures: {ng_telemetry.get("apply_failures", 0)}')}
+    {stat_card('Avg Apply Time', f'{ng_telemetry.get("avg_apply_time", 0)}s', f'Last success: {ng_telemetry.get("last_successful_apply", "Never")[:10]}' if ng_telemetry.get("last_successful_apply") else 'No successful applies yet')}
   </div>
 
   <div class="card" style="margin-bottom:16px;">
@@ -543,6 +719,42 @@ a:hover {{ color:#38bdf8; }}
       <div class="step"><strong>4. Notify</strong><span>Email + Telegram</span></div>
       <div class="step"><strong>5. Apply</strong><span>Track applications</span></div>
       <div class="step"><strong>6. Learn</strong><span>Feedback loop intelligence</span></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h2>🎯 Recruiter Funnel</h2>
+    <div class="pipeline">
+      <div class="step"><strong>Applications Sent</strong><span>{effectiveness_metrics["total_applications"]} total</span></div>
+      <div class="step"><strong>Viewed</strong><span>Tracking via Gmail sync</span></div>
+      <div class="step"><strong>Replied</strong><span>Response intelligence active</span></div>
+      <div class="step"><strong>Interview</strong><span>{effectiveness_metrics["interviews"]} scheduled</span></div>
+      <div class="step"><strong>Conversion Rate</strong><span>{effectiveness_metrics["interview_rate"]:.1f}%</span></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h2>🚫 Top Excluded Jobs</h2>
+    <div style="font-size: 14px;">
+      {f'''
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div>
+          <h4 style="margin: 0 0 8px 0; color: var(--muted); font-size: 12px;">Most Common Exclusions</h4>
+          {"".join([f"<div style='padding: 4px 0; border-bottom: 1px solid var(--line);'><strong>{title}</strong> <span class='muted'>({count} times)</span></div>" for title, count in effectiveness_metrics["top_excluded_jobs"]])}
+        </div>
+        <div>
+          <h4 style="margin: 0 0 8px 0; color: var(--muted); font-size: 12px;">Filter Tuning Insights</h4>
+          <div style="padding: 8px; background: rgba(245, 158, 11, 0.1); border: 1px solid var(--mid); border-radius: 8px;">
+            <div style="font-size: 12px; margin-bottom: 4px;">False Positive Rate: <strong>{effectiveness_metrics["false_positive_rate"]:.1f}%</strong></div>
+            <div style="font-size: 12px;">Relevant Match Rate: <strong>{effectiveness_metrics["relevant_roles_rate"]:.1f}%</strong></div>
+          </div>
+        </div>
+      </div>
+      ''' if effectiveness_metrics["top_excluded_jobs"] else '''
+      <div style="color: var(--muted); padding: 12px; background: var(--panel); border-radius: 8px;">
+        No excluded jobs data available yet. The system is learning from your filtering patterns.
+      </div>
+      '''}
     </div>
   </div>
 
@@ -649,7 +861,7 @@ a:hover {{ color:#38bdf8; }}
   <div class="card" style="margin-bottom:16px;">
     <h2>Top Jobs by Score {f'(🗄️ {data_source.title()})'}</h2>
     <table>
-      <thead><tr><th>Role</th><th>Location</th><th>Quality</th><th>Score</th><th>Why it matches</th></tr></thead>
+      <thead><tr><th>Role</th><th>Location</th><th>Quality</th><th>Score</th><th>Why it matches</th><th>Action</th></tr></thead>
       <tbody>{''.join(_job_row(job, show_confidence=True) for job in top_jobs)}</tbody>
     </table>
   </div>
@@ -662,6 +874,109 @@ a:hover {{ color:#38bdf8; }}
     <button class="refresh-btn" onclick="location.reload()">🔄 Refresh</button>
   </div>
 </div>
+
+<script>
+async function applyJob(btn) {{
+    btn.disabled = true;
+    btn.innerText = "Applying...";
+
+    try {{
+        const job = JSON.parse(btn.dataset.job);
+
+        const res = await fetch("http://127.0.0.1:8000/apply-one", {{
+            method: "POST",
+            headers: {{
+                "Content-Type": "application/json"
+            }},
+            body: JSON.stringify({{ job }})
+        }});
+
+        const data = await res.json();
+
+        if (data.status) {{
+            btn.innerText = "✅ " + data.status;
+        }} else {{
+            btn.innerText = "⚠️ Unknown";
+        }}
+
+    }} catch (err) {{
+        console.error(err);
+        btn.innerText = "❌ Failed";
+    }}
+}}
+
+async function skipJob(btn) {{
+    btn.disabled = true;
+    btn.innerText = "⏭️ Skipped";
+
+    try {{
+        const job = JSON.parse(btn.dataset.job);
+        console.log("Skipped job:", job.title);
+
+        // Mark job as seen/skipped in local storage or send to backend
+        const res = await fetch("http://127.0.0.1:8000/skip-job", {{
+            method: "POST",
+            headers: {{
+                "Content-Type": "application/json"
+            }},
+            body: JSON.stringify({{ job }})
+        }});
+
+        if (res.ok) {{
+            btn.innerText = "✅ Skipped";
+        }} else {{
+            btn.innerText = "⚠️ Error";
+        }}
+
+    }} catch (err) {{
+        console.error(err);
+        btn.innerText = "❌ Failed";
+    }}
+}}
+
+function openJob(btn) {{
+    const link = btn.dataset.link;
+    if (link && link !== "#") {{
+        window.open(link, "_blank");
+    }} else {{
+        alert("No valid job link available");
+    }}
+}}
+
+async function blockSimilar(btn) {{
+    if (!confirm("Block similar jobs? This will hide jobs with similar titles/companies.")) {{
+        return;
+    }}
+
+    btn.disabled = true;
+    btn.innerText = "🚫 Blocking...";
+
+    try {{
+        const job = JSON.parse(btn.dataset.job);
+        console.log("Blocking similar to:", job.title);
+
+        // Send to backend to add to exclusion list
+        const res = await fetch("http://127.0.0.1:8000/block-similar", {{
+            method: "POST",
+            headers: {{
+                "Content-Type": "application/json"
+            }},
+            body: JSON.stringify({{ job }})
+        }});
+
+        if (res.ok) {{
+            btn.innerText = "✅ Blocked";
+        }} else {{
+            btn.innerText = "⚠️ Error";
+        }}
+
+    }} catch (err) {{
+        console.error(err);
+        btn.innerText = "❌ Failed";
+    }}
+}}
+</script>
+
 </body>
 </html>"""
     return html
