@@ -24,6 +24,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Playwright browsers
+        run: python -m playwright install chromium
+
       - name: Write Gmail OAuth files
         run: |
           printf '%s' '${{ secrets.GMAIL_CREDENTIALS_JSON }}' > credentials.json
@@ -31,13 +34,22 @@ jobs:
 
       - name: Run daily pipeline
         env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GMAIL_CREDENTIALS_JSON: ${{ secrets.GMAIL_CREDENTIALS_JSON }}
+          GMAIL_TOKEN_JSON: ${{ secrets.GMAIL_TOKEN_JSON }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          NG_ENABLED: ${{ secrets.NG_ENABLED }}
+          NG_DRY_RUN: ${{ secrets.NG_DRY_RUN }}
+          NG_MAX_PER_RUN: ${{ secrets.NG_MAX_PER_RUN }}
+          NG_DAILY_LIMIT: ${{ secrets.NG_DAILY_LIMIT }}
+          NG_SCORE_THRESHOLD: ${{ secrets.NG_SCORE_THRESHOLD }}
+          NAUKRIGULF_EMAIL: ${{ secrets.NAUKRIGULF_EMAIL }}
+          NAUKRIGULF_PASSWORD: ${{ secrets.NAUKRIGULF_PASSWORD }}
         run: python -m src.run_daily
 
       - name: Run follow-up reminders
