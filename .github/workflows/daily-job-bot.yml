@@ -32,6 +32,20 @@ jobs:
           printf '%s' '${{ secrets.GMAIL_CREDENTIALS_JSON }}' > credentials.json
           printf '%s' '${{ secrets.GMAIL_TOKEN_JSON }}' > token.json
 
+      - name: Debug NG env
+        run: |
+          echo "NG_ENABLED=${NG_ENABLED:-missing}"
+          echo "NG_DRY_RUN=${NG_DRY_RUN:-missing}"
+          echo "NG_MAX_PER_RUN=${NG_MAX_PER_RUN:-missing}"
+          echo "NG_DAILY_LIMIT=${NG_DAILY_LIMIT:-missing}"
+          echo "NG_SCORE_THRESHOLD=${NG_SCORE_THRESHOLD:-missing}"
+        env:
+          NG_ENABLED: ${{ secrets.NG_ENABLED }}
+          NG_DRY_RUN: ${{ secrets.NG_DRY_RUN }}
+          NG_MAX_PER_RUN: ${{ secrets.NG_MAX_PER_RUN }}
+          NG_DAILY_LIMIT: ${{ secrets.NG_DAILY_LIMIT }}
+          NG_SCORE_THRESHOLD: ${{ secrets.NG_SCORE_THRESHOLD }}
+
       - name: Run daily pipeline
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
