@@ -37,6 +37,19 @@ def score_job(job):
     salary_preferences = get_salary_preferences()
     target_roles = [role.lower() for role in get_target_roles()]
 
+    # 0.5. Positive target role filtering - only HSE/Safety/Compliance roles
+    positive_target_keywords = [
+        "hse", "qhse", "ehs", "safety", "environmental", "compliance",
+        "health", "safety officer", "safety manager", "environmental manager",
+        "compliance officer", "risk manager", "auditor", "quality", "qms"
+    ]
+
+    positive_match = any(kw in title for kw in positive_target_keywords)
+    if not positive_match:
+        # No positive target keywords - significantly reduce score
+        score -= 30
+        score_details.append("No HSE/Safety keywords (-30)")
+
     # 1. Target role matching (highest priority)
     for role in target_roles:
         if role in title:
