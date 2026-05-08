@@ -29,12 +29,16 @@ import logging
 import os
 import time
 from dataclasses import asdict, dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+
+UTC = timezone.utc
 from enum import Enum
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
+from filelock import FileLock, Timeout as FileLockTimeout
 from playwright.sync_api import (
     Browser,
     BrowserContext,
@@ -130,7 +134,7 @@ class ApplyResult:
 
     def __post_init__(self) -> None:
         if not self.timestamp:
-            self.timestamp = datetime.utcnow().isoformat()
+            self.timestamp = datetime.now(UTC).isoformat()
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -141,49 +145,142 @@ class ApplyResult:
 # ── Persistent rate limiter ───────────────────────────────────────────────────
 
 class _RateLimiter:
+    """
+    Persistent daily rate limiter.
+    Thread-safe (threading.Lock) and cross-process-safe (FileLock).
+    Atomic writes via tempfile + os.replace.
+    """
+
+    _LOCK_TIMEOUT_S = 8
+
     def __init__(self, path: Path = RATE_FILE) -> None:
-        self._path  = path
-        self._state = self._load()
+        self._path      = path
+        self._lock_path = Path(str(path) + ".lock")
+        self._thread_lock = threading.Lock()
+
+    # ── I/O helpers ───────────────────────────────────────────────────────
 
     def _load(self) -> Dict[str, Any]:
         try:
             with self._path.open() as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return {"date": "", "count": 0, "last_apply": None}
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            pass
+        return {"date": "", "count": 0, "last_apply": None}
 
-    def _save(self) -> None:
+    def _save(self, state: Dict[str, Any]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._path.open("w") as f:
-            json.dump(self._state, f)
+        import tempfile
+        fd, tmp = tempfile.mkstemp(dir=str(self._path.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(state, f)
+            os.replace(tmp, str(self._path))
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
-    def _reset_if_new_day(self) -> None:
-        today = date.today().isoformat()
-        if self._state.get("date") != today:
-            self._state = {"date": today, "count": 0, "last_apply": None}
-            self._save()
+    # ── Public interface ──────────────────────────────────────────────────
+
+    def try_acquire(self) -> tuple[bool, str]:
+        """
+        Atomically check AND reserve a slot in one lock acquisition.
+        Use this instead of can_apply() + record() when both happen in the
+        same thread/process without intervening I/O (e.g. tests, concurrent callers).
+        Returns (allowed, reason).  On success the count is already incremented.
+        """
+        try:
+            with FileLock(str(self._lock_path), timeout=self._LOCK_TIMEOUT_S):
+                with self._thread_lock:
+                    state = self._load()
+                    state = self._reset_if_new_day(state)
+                    if state["count"] >= DAILY_LIMIT:
+                        return False, f"daily_limit count={state['count']}/{DAILY_LIMIT}"
+                    last = state.get("last_apply")
+                    if last:
+                        try:
+                            elapsed = (
+                                datetime.now(UTC) -
+                                datetime.fromisoformat(last).replace(tzinfo=UTC)
+                            ).total_seconds()
+                            if elapsed < COOLDOWN_SECONDS:
+                                return False, f"cooldown remaining={int(COOLDOWN_SECONDS - elapsed)}s"
+                        except (ValueError, TypeError, AttributeError):
+                            pass
+                    # Atomically reserve the slot
+                    state["count"] += 1
+                    state["last_apply"] = datetime.now(UTC).isoformat()
+                    self._save(state)
+                    return True, "ok"
+        except FileLockTimeout:
+            logger.warning("rate_limiter_try_acquire_timeout — denying apply (safe default)")
+            return False, "lock_timeout"
 
     def can_apply(self) -> tuple[bool, str]:
-        self._reset_if_new_day()
-        if self._state["count"] >= DAILY_LIMIT:
-            return False, f"daily_limit count={self._state['count']}/{DAILY_LIMIT}"
-        last = self._state.get("last_apply")
-        if last:
-            elapsed = (datetime.utcnow() - datetime.fromisoformat(last)).total_seconds()
-            if elapsed < COOLDOWN_SECONDS:
-                return False, f"cooldown remaining={int(COOLDOWN_SECONDS - elapsed)}s"
-        return True, "ok"
+        """
+        Read-only check (does NOT increment the counter).
+        Followed by record() after a successful apply.
+        Safe for the single-threaded sequential apply loop in production.
+        For concurrent callers use try_acquire() instead.
+        """
+        try:
+            with FileLock(str(self._lock_path), timeout=self._LOCK_TIMEOUT_S):
+                with self._thread_lock:
+                    state = self._load()
+                    state = self._reset_if_new_day(state)
+                    if state["count"] >= DAILY_LIMIT:
+                        return False, f"daily_limit count={state['count']}/{DAILY_LIMIT}"
+                    last = state.get("last_apply")
+                    if last:
+                        try:
+                            elapsed = (
+                                datetime.now(UTC) -
+                                datetime.fromisoformat(last).replace(tzinfo=UTC)
+                            ).total_seconds()
+                            if elapsed < COOLDOWN_SECONDS:
+                                return False, f"cooldown remaining={int(COOLDOWN_SECONDS - elapsed)}s"
+                        except (ValueError, TypeError, AttributeError):
+                            pass
+                    return True, "ok"
+        except FileLockTimeout:
+            logger.warning("rate_limiter_lock_timeout — allowing apply")
+            return True, "lock_timeout"
 
     def record(self) -> None:
-        self._reset_if_new_day()
-        self._state["count"] += 1
-        self._state["last_apply"] = datetime.utcnow().isoformat()
-        self._save()
+        """Increment the counter after a confirmed successful apply."""
+        try:
+            with FileLock(str(self._lock_path), timeout=self._LOCK_TIMEOUT_S):
+                with self._thread_lock:
+                    state = self._load()
+                    state = self._reset_if_new_day(state)
+                    state["count"] += 1
+                    state["last_apply"] = datetime.now(UTC).isoformat()
+                    self._save(state)
+        except FileLockTimeout:
+            logger.warning("rate_limiter_record_lock_timeout — count may be inaccurate")
 
     @property
     def today_count(self) -> int:
-        self._reset_if_new_day()
-        return self._state["count"]
+        try:
+            with FileLock(str(self._lock_path), timeout=self._LOCK_TIMEOUT_S):
+                with self._thread_lock:
+                    state = self._load()
+                    state = self._reset_if_new_day(state)
+                    return state["count"]
+        except FileLockTimeout:
+            return 0
+
+    @staticmethod
+    def _reset_if_new_day(state: Dict[str, Any]) -> Dict[str, Any]:
+        today = date.today().isoformat()
+        if state.get("date") != today:
+            return {"date": today, "count": 0, "last_apply": None}
+        return state
 
 
 # ── Browser setup ─────────────────────────────────────────────────────────────
@@ -402,7 +499,8 @@ class LinkedInEasyApplyEngine:
         if self._logged_in:
             return True
         page = self._page
-        assert page
+        if page is None:
+            raise RuntimeError("Browser page not initialised")
 
         page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded")
         page.wait_for_timeout(2_000)
@@ -432,7 +530,11 @@ class LinkedInEasyApplyEngine:
     # ── apply flow ────────────────────────────────────────────────────────────
 
     def _do_apply(self, job: Dict[str, Any]) -> ApplyResult:
-        assert self._page
+        if self._page is None:
+            raise RuntimeError(
+                "Browser page is not initialised — use LinkedInEasyApplyEngine "
+                "as a context manager (with ... as engine:)"
+            )
         link    = job.get("link", "")
         title   = job.get("title", "Unknown")
         company = job.get("company", "Unknown")

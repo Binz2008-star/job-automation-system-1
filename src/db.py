@@ -146,15 +146,26 @@ def save_job(job: Dict[str, Any], score: int) -> bool:
             conn.close()
 
 
-def get_seen_links() -> List[str]:
-    """Get list of seen job links."""
+def get_seen_links(days_back: int = 90, limit: int = 8000) -> List[str]:
+    """
+    Get seen job links from the past `days_back` days.
+    Bounded by `limit` to prevent loading unbounded rows into memory.
+    """
     conn = get_db_connection()
     if not conn:
         return []
 
     try:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT link FROM jobs ORDER BY date_found DESC")
+            cursor.execute(
+                """
+                SELECT link FROM jobs
+                WHERE date_found > NOW() - (%s * INTERVAL '1 day')
+                ORDER BY date_found DESC
+                LIMIT %s
+                """,
+                (days_back, limit),
+            )
             return [row[0] for row in cursor.fetchall()]
 
     except Exception as e:
@@ -216,8 +227,10 @@ def update_application_status(job_link: str, status: str, notes: str = None) -> 
                     follow_up_date = CASE WHEN %s = 'interview' THEN CURRENT_TIMESTAMP ELSE follow_up_date END
                 WHERE job_link = %s
             """, (status, notes, notes, status, job_link))
+            # rowcount MUST be read inside the with-block; psycopg2 resets it on cursor close
+            affected = cursor.rowcount
 
-        return cursor.rowcount > 0
+        return affected > 0
 
     except Exception as e:
         print(f"❌ Failed to update application status: {e}")

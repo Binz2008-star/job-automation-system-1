@@ -145,23 +145,25 @@ def _fetch_and_score() -> Tuple[
     # Combine apply and watch jobs
     final_matches = apply_jobs + watch_jobs
 
-    # Filter out already applied jobs with better logging
-    from src.applications import is_applied
+    # Filter out already applied jobs — batch check (single file read)
+    from src.applications import is_applied_batch, get_job_id
+    all_candidate_jobs = [j for j, _ in final_matches] + [j for j, _ in matches]
+    applied_map = is_applied_batch(all_candidate_jobs)
+
     filtered_matches = []
     applied_count = 0
 
     for job, score in final_matches:
-        if is_applied(job):
+        if applied_map.get(get_job_id(job), False):
             applied_count += 1
             logger.info(f"filtering_applied job={job.get('title', 'unknown')} company={job.get('company', 'unknown')}")
         else:
             filtered_matches.append((job, score))
 
-    # Force minimum output: ensure at least 5 jobs
+    # Force minimum output: ensure at least 5 jobs (using cached applied_map)
     if len(filtered_matches) < 5:
-        # fallback: take top scored jobs (excluding already applied)
         for job, score in matches:
-            if not is_applied(job) and len(filtered_matches) < 5:
+            if not applied_map.get(get_job_id(job), False) and len(filtered_matches) < 5:
                 filtered_matches.append((job, score))
 
     logger.info(f"job_filtering_complete applied_filtered={applied_count} final_jobs={len(filtered_matches)}")

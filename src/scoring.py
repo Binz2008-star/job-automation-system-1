@@ -11,14 +11,18 @@ def score_job(job):
     Roben Edwan's CV-aware job scoring system.
     Optimized for HSE / QHSE / EHS / ESG / Compliance roles in UAE.
 
-    Pipeline: ENV excludes → hard reject → title gate → scoring → 0.4× multiplier if no HSE title → floor 0
+    Pipeline: type-guard → ENV excludes → hard reject → title gate → scoring → floor 0
     """
+    # Guard: reject non-dict input gracefully instead of raising AttributeError
+    if not isinstance(job, dict):
+        return 0
+
     score = 0
     score_details = []
 
     # Extract job text for analysis
-    title = str(job.get("title", "")).lower()
-    description = str(job.get("description", "")).lower()
+    title = str(job.get("title", "") or "").lower()
+    description = str(job.get("description", "") or "").lower()
     job_text = f"{title} {description}"
 
     # STEP 0: ENV excludes - immediate disqualification

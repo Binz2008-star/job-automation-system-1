@@ -33,7 +33,9 @@ import random
 import shutil
 import time
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+
+_UTC = timezone.utc
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -154,7 +156,7 @@ class NGApplyResult:
 
     def __post_init__(self) -> None:
         if not self.timestamp:
-            self.timestamp = datetime.utcnow().isoformat()
+            self.timestamp = datetime.now(_UTC).isoformat()
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -193,7 +195,7 @@ class _RateLimiter:
             return False, f"daily_limit {self._state['count']}/{NG_DAILY_LIMIT}"
         last = self._state.get("last_apply")
         if last:
-            elapsed = (datetime.utcnow() - datetime.fromisoformat(last)).total_seconds()
+            elapsed = (datetime.now(_UTC) - datetime.fromisoformat(last).replace(tzinfo=_UTC)).total_seconds()
             if elapsed < NG_COOLDOWN:
                 return False, f"cooldown remaining={int(NG_COOLDOWN - elapsed)}s"
         return True, "ok"
@@ -201,7 +203,7 @@ class _RateLimiter:
     def record(self) -> None:
         self._reset_if_new_day()
         self._state["count"] += 1
-        self._state["last_apply"] = datetime.utcnow().isoformat()
+        self._state["last_apply"] = datetime.now(_UTC).isoformat()
         self._save()
 
     @property
@@ -276,7 +278,7 @@ def _is_too_old(job: Dict[str, Any]) -> bool:
         return False
     try:
         dt = datetime.fromisoformat(str(posted)[:19])
-        return (datetime.utcnow() - dt).days > NG_MAX_AGE_DAYS
+        return (datetime.now(_UTC) - dt).days > NG_MAX_AGE_DAYS
     except (ValueError, TypeError):
         return False
 
@@ -613,7 +615,7 @@ class NaukriGulfApplyEngine:
                     state = json.load(f)
 
             count = state.get("count", 0) + 1
-            state = {"count": count, "last": datetime.utcnow().isoformat()}
+            state = {"count": count, "last": datetime.now(_UTC).isoformat()}
             _SESSION_FAIL_FILE.parent.mkdir(parents=True, exist_ok=True)
             with _SESSION_FAIL_FILE.open("w") as f:
                 json.dump(state, f)
