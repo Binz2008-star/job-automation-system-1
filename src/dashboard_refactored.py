@@ -610,7 +610,7 @@ def build_refactored_dashboard() -> str:
                 </div>
                 <div>
                     <h3>Competitive Edge</h3>
-                    {"".join(strategy_recommendation(f"✓ {adv}" for adv in competitive_advantages)}
+                    {"".join(strategy_recommendation(f"✓ {adv}" for adv in competitive_advantages))}
                 </div>
             </div>
         </div>

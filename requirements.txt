@@ -17,3 +17,6 @@ python-docx
 filelock
 redis
 rq
+python-jose[cryptography]
+passlib[bcrypt]
+alembic
