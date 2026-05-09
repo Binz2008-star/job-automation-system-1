@@ -18,6 +18,7 @@ Run:
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -49,6 +50,17 @@ from src.dashboard import build_dashboard
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 DASHBOARD_FILE = BASE_DIR / "dashboard.html"
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+RICO_ENABLE_AUTO_APPLY = _env_bool("RICO_ENABLE_AUTO_APPLY", False)
+RICO_INTERACTIVE_APPLY = _env_bool("RICO_INTERACTIVE_APPLY", False)
 
 # 23h: prevents double-runs on the same calendar day; still allows a
 # manual retry after a failure without waiting a full 24h.
@@ -216,7 +228,12 @@ def _apply_assistant(matches: List[Tuple[Dict[str, Any], int]]) -> None:
                 mark_applied(job, status="decision_made")
                 logger.info(f"apply_decision_logged title={job.get('title', 'unknown')} company={job.get('company', 'unknown')}")
 
-        # # run_apply_assistant(matches)  # disabled - requires interactive input
+        if RICO_INTERACTIVE_APPLY:
+            logger.info("interactive_apply_enabled")
+            run_apply_assistant(matches)
+        else:
+            logger.info("interactive_apply_disabled cloud_safe_mode")
+
         logger.info(f"apply_assistant_done candidates={len(matches)}")
     except Exception:
         logger.exception("apply_assistant_error")
@@ -232,11 +249,19 @@ def _auto_apply_linkedin(matches: List[Tuple[Dict[str, Any], int]]) -> None:
 
 
 def _auto_apply_naukrigulf(matches: List[Tuple[Dict[str, Any], int]]) -> None:
-    """Auto-apply to NaukriGulf jobs via persistent browser automation."""
+    """Auto-apply to NaukriGulf jobs via persistent browser automation.
+
+    Disabled by default for unattended/cloud execution. Enable only with
+    RICO_ENABLE_AUTO_APPLY=true plus the NaukriGulf-specific flags.
+    """
+    if not RICO_ENABLE_AUTO_APPLY:
+        logger.info("naukrigulf_apply_skipped RICO_ENABLE_AUTO_APPLY=false")
+        return
+
     try:
         from src.naukrigulf_apply import run_naukrigulf_apply, NGApplyStatus
 
-        logger.info("naukrigulf_apply_starting direct_search")
+        logger.warning("naukrigulf_apply_enabled autonomous_browser_actions_active")
         # Use direct search mode (jobs=None) to let NaukriGulf engine find jobs
         results = run_naukrigulf_apply(jobs=None, max_applies=2)
 
