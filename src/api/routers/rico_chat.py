@@ -16,8 +16,8 @@ import os
 import re
 from typing import Any, Dict
 
-from fastapi import APIRouter, File, Request, UploadFile
-from pydantic import BaseModel
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from pydantic import BaseModel, Field
 
 import src.services.chat_service as chat_service
 from src.api.rate_limit import LIMIT_CHAT, LIMIT_UPLOAD, LIMIT_WEBHOOK, limiter
@@ -26,21 +26,23 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/rico", tags=["rico"])
 
-_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_UNSAFE_CHARS_RE = re.compile(r"[<>\"']")
+_PDF_MAGIC = b"%PDF"
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 def _safe_filename(name: str | None) -> str:
-    """Strip path traversal and HTML tags from an uploaded filename."""
+    """Strip path traversal and unsafe chars from an uploaded filename."""
     if not name:
         return "upload"
-    name = os.path.basename(name)         # strip directory components
-    name = _HTML_TAG_RE.sub("", name)     # strip <tags>
+    name = os.path.basename(name)
+    name = _UNSAFE_CHARS_RE.sub("", name)
     return name.strip() or "upload"
 
 
 class RicoChatRequest(BaseModel):
     user_id: str
-    message: str
+    message: str = Field(..., max_length=4096)
 
 
 @router.post("/chat")
@@ -53,6 +55,12 @@ def rico_chat(request: Request, payload: RicoChatRequest) -> Dict[str, Any]:
 @limiter.limit(LIMIT_UPLOAD)
 async def rico_upload_cv(request: Request, user_id: str, file: UploadFile = File(...)) -> Dict[str, Any]:
     data = await file.read()
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds 10 MB limit")
+    if not data:
+        raise HTTPException(status_code=422, detail="Uploaded file is empty")
+    if not data.startswith(_PDF_MAGIC):
+        raise HTTPException(status_code=422, detail="Only PDF files are accepted")
     safe_name = _safe_filename(file.filename)
     parsed = chat_service.parse_cv(data, filename=safe_name)
     return {

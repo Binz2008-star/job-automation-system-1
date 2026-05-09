@@ -59,7 +59,7 @@ def _fp(job: Dict[str, Any]) -> str:
         str(job.get("company", "")).lower(),
         str(job.get("link", "")).strip(),
     ])
-    return hashlib.md5(k.encode()).hexdigest()
+    return hashlib.md5(k.encode(), usedforsecurity=False).hexdigest()
 
 
 # ─── Cache I/O ───────────────────────────────────────────────────────────────

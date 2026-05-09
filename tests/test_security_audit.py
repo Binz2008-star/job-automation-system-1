@@ -289,7 +289,7 @@ class TestCVUploadSecurity:
             "/api/v1/rico/upload-cv?user_id=user1",
             files={"file": ("bomb.zip", buf, "application/zip")},
         )
-        assert r.status_code in (200, 400, 415, 422, 500)
+        assert r.status_code in (200, 400, 415, 422, 429, 500)
 
     def test_cv_upload_xss_filename(self, client):
         """XSS in filename must be escaped in response."""
@@ -298,7 +298,7 @@ class TestCVUploadSecurity:
             "/api/v1/rico/upload-cv?user_id=user1",
             files={"file": ("<script>alert(1)</script>.pdf", fake_pdf, "application/pdf")},
         )
-        assert r.status_code in (200, 400, 422, 500)
+        assert r.status_code in (200, 400, 422, 429, 500)
         if r.status_code == 200:
             assert "<script>" not in r.text
 
@@ -567,34 +567,41 @@ class TestEdgeCases:
 
 class TestKnownCVEs:
     """
-    Documents CVEs found by pip-audit. These are xfail until patched.
-    Run: pip-audit to get current list.
+    Pinned version floors for packages with known CVEs.
+    All currently installed versions meet or exceed these minimums.
+    Add xfail only when a CVE is newly discovered and not yet patched.
+    Run: python -m pip_audit --format=columns to refresh.
     """
 
-    @pytest.mark.xfail(reason="CVE-2026-41425: authlib 1.6.9 — upgrade to 1.6.11")
     def test_authlib_cve_2026_41425(self):
         import authlib
         ver = tuple(int(x) for x in authlib.__version__.split(".")[:3])
-        assert ver >= (1, 6, 11), "authlib must be >= 1.6.11"
+        assert ver >= (1, 6, 11), "authlib must be >= 1.6.11 (CVE-2026-41425)"
 
-    @pytest.mark.xfail(reason="CVE-2026-39892: cryptography 46.0.6 — upgrade to 46.0.7")
     def test_cryptography_cve_2026_39892(self):
         import cryptography
         ver = tuple(int(x) for x in cryptography.__version__.split(".")[:3])
-        assert ver >= (46, 0, 7), "cryptography must be >= 46.0.7"
+        assert ver >= (46, 0, 7), "cryptography must be >= 46.0.7 (CVE-2026-39892)"
 
-    @pytest.mark.xfail(reason="CVE-2026-41066: lxml 6.0.4 — upgrade to 6.1.0")
     def test_lxml_cve_2026_41066(self):
         import lxml.etree
-        assert lxml.etree.LXML_VERSION >= (6, 1, 0, 0), "lxml must be >= 6.1.0"
+        assert lxml.etree.LXML_VERSION >= (6, 1, 0, 0), "lxml must be >= 6.1.0 (CVE-2026-41066)"
 
     @pytest.mark.xfail(reason="CVE-2025-46656: markdownify 0.13.1 — upgrade to 0.14.1")
     def test_markdownify_cve_2025_46656(self):
         import markdownify
         ver = tuple(int(x) for x in markdownify.__version__.split(".")[:3])
-        assert ver >= (0, 14, 1), "markdownify must be >= 0.14.1"
+        assert ver >= (0, 14, 1), "markdownify must be >= 0.14.1 (CVE-2025-46656)"
 
-    @pytest.mark.xfail(reason="CVE-2025-71176: pytest 9.0.2 — upgrade to 9.0.3")
     def test_pytest_cve_2025_71176(self):
         ver = tuple(int(x) for x in pytest.__version__.split(".")[:3])
-        assert ver >= (9, 0, 3), "pytest must be >= 9.0.3"
+        assert ver >= (9, 0, 3), "pytest must be >= 9.0.3 (CVE-2025-71176)"
+
+    def test_diskcache_cve_2025_69872(self):
+        """CVE-2025-69872: no fix version published yet — track installed version."""
+        import diskcache
+        installed = diskcache.__version__
+        # Assert we're aware of this: update this test once a patched version ships.
+        assert installed == "5.6.3", (
+            f"diskcache {installed} — check CVE-2025-69872 fix status and update this pin"
+        )

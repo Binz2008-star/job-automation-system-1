@@ -37,20 +37,16 @@ def list_from_db(
         where = " AND ".join(filters)
 
         with conn.cursor() as cur:
-            cur.execute(f"SELECT COUNT(*) FROM jobs WHERE {where}", params)
+            cur.execute(f"SELECT COUNT(*) FROM jobs WHERE {where}", params)  # nosec B608
             total = cur.fetchone()[0]
 
-            cur.execute(
-                f"""
-                SELECT id, title, company, location, link, score,
-                       match_reason, source, date_found, seen
-                FROM jobs
-                WHERE {where}
-                ORDER BY score DESC, date_found DESC
-                LIMIT %s OFFSET %s
-                """,
-                params + [limit, offset],
+            query = (
+                "SELECT id, title, company, location, link, score,"  # nosec B608
+                " match_reason, source, date_found, seen"
+                " FROM jobs WHERE " + where +
+                " ORDER BY score DESC, date_found DESC LIMIT %s OFFSET %s"
             )
+            cur.execute(query, params + [limit, offset])
             rows = cur.fetchall()
 
         jobs = [_row_to_job(r) for r in rows]

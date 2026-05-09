@@ -13,7 +13,7 @@ import logging
 import math
 import re
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -66,7 +66,7 @@ class RicoMemoryStore:
 
     def save_profile(self, profile: RicoProfile) -> None:
         payload = asdict(profile)
-        payload["updated_at"] = datetime.utcnow().isoformat()
+        payload["updated_at"] = datetime.now(timezone.utc).isoformat()
         self._profile_path(profile.user_id).write_text(
             json.dumps(payload, indent=2, ensure_ascii=False),
             encoding="utf-8",
@@ -106,7 +106,7 @@ class RicoMemoryStore:
         history.append({
             "role": role,
             "message": message,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         })
         self._chat_path(user_id).write_text(
             json.dumps(history[-200:], indent=2, ensure_ascii=False),
@@ -138,7 +138,7 @@ class RicoMemoryStore:
         signals.append({
             "job_id": job_id,
             "action": action,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         })
         self._signals_path(user_id).write_text(
             json.dumps(signals[-500:], indent=2, ensure_ascii=False),
@@ -191,8 +191,8 @@ class RicoMemoryStore:
     ) -> Dict[str, Any]:
         memory_type = memory_type if memory_type in MEMORY_TYPES else "system"
         memories = self.load_memories(user_id)
-        now = datetime.utcnow().isoformat()
-        memory_id = f"mem_{len(memories) + 1}_{int(datetime.utcnow().timestamp())}"
+        now = datetime.now(timezone.utc).isoformat()
+        memory_id = f"mem_{len(memories) + 1}_{int(datetime.now(timezone.utc).timestamp())}"
         entry = {
             "id": memory_id,
             "memory_type": memory_type,

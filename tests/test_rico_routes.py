@@ -81,6 +81,15 @@ class TestRicoChatRouteExists:
         r = client.post("/api/v1/rico/chat", json={"user_id": "user-1"})
         assert r.status_code == 422
 
+    def test_chat_message_over_4096_chars_returns_422(self, client):
+        r = client.post("/api/v1/rico/chat", json={"user_id": "user-1", "message": "A" * 4097})
+        assert r.status_code == 422
+
+    def test_chat_message_exactly_4096_chars_allowed(self, client):
+        with patch("src.services.chat_service.send_message", return_value=_CHAT_RESPONSE):
+            r = client.post("/api/v1/rico/chat", json={"user_id": "user-1", "message": "A" * 4096})
+        assert r.status_code == 200
+
 
 class TestRicoCVUploadRouteExists:
     def test_upload_cv_route_returns_200(self, client):
@@ -121,6 +130,48 @@ class TestRicoCVUploadRouteExists:
             files={"file": ("cv.pdf", io.BytesIO(b"%PDF"), "application/pdf")},
         )
         assert r.status_code == 422
+
+    def test_upload_cv_non_pdf_returns_422(self, client):
+        r = client.post(
+            "/api/v1/rico/upload-cv?user_id=user-1",
+            files={"file": ("resume.pdf", io.BytesIO(b"This is not a PDF"), "application/pdf")},
+        )
+        assert r.status_code == 422
+
+    def test_upload_cv_empty_file_returns_422(self, client):
+        r = client.post(
+            "/api/v1/rico/upload-cv?user_id=user-1",
+            files={"file": ("empty.pdf", io.BytesIO(b""), "application/pdf")},
+        )
+        assert r.status_code == 422
+
+    def test_upload_cv_exe_disguised_as_pdf_returns_422(self, client):
+        exe_header = b"MZ\x90\x00" + b"\x00" * 60
+        r = client.post(
+            "/api/v1/rico/upload-cv?user_id=user-1",
+            files={"file": ("malware.pdf", io.BytesIO(exe_header), "application/pdf")},
+        )
+        assert r.status_code == 422
+
+    def test_upload_cv_path_traversal_filename_sanitised(self, client):
+        with patch("src.services.chat_service.parse_cv", return_value=_CV_PARSED):
+            r = client.post(
+                "/api/v1/rico/upload-cv?user_id=user-1",
+                files={"file": ("../../etc/passwd", io.BytesIO(b"%PDF-1.4 ok"), "application/pdf")},
+            )
+        assert r.status_code == 200
+        assert "/" not in r.json()["filename"]
+        assert ".." not in r.json()["filename"]
+
+    def test_upload_cv_xss_filename_sanitised(self, client):
+        with patch("src.services.chat_service.parse_cv", return_value=_CV_PARSED):
+            r = client.post(
+                "/api/v1/rico/upload-cv?user_id=user-1",
+                files={"file": ('<script>alert(1)</script>.pdf', io.BytesIO(b"%PDF-1.4 ok"), "application/pdf")},
+            )
+        assert r.status_code == 200
+        assert "<" not in r.json()["filename"]
+        assert ">" not in r.json()["filename"]
 
 
 class TestRicoTelegramWebhookRouteExists:
