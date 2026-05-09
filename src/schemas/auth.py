@@ -1,5 +1,8 @@
 from __future__ import annotations
-from pydantic import BaseModel, EmailStr, Field
+
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 
 class LoginRequest(BaseModel):
@@ -10,3 +13,16 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     message: str
     email: str
+
+
+class RegisterRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=256)
+    password: str = Field(..., min_length=8, max_length=128,
+                          description="Minimum 8 characters")
+    role: Literal["admin", "user"] = Field("user", description="User role")
+
+
+class RegisterResponse(BaseModel):
+    email: str
+    role: str
+    created: bool
