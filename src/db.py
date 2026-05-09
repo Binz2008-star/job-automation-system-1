@@ -15,7 +15,9 @@ load_dotenv()
 
 # Database connection
 DATABASE_URL = os.getenv("DATABASE_URL")
-DB_ENABLED = bool(DATABASE_URL and DATABASE_URL.startswith("postgresql://"))
+DB_ENABLED = bool(DATABASE_URL and (
+    DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://")
+))
 
 # Fallback to JSON if DB fails
 JSON_FALLBACK = True
