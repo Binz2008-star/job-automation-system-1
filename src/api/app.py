@@ -27,6 +27,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from src.api.auth import router as auth_router
 from src.api.rate_limit import limiter, rate_limit_exceeded_handler
+from src.api.routers.actions import router as actions_router
 from src.api.routers.agent import router as agent_router
 from src.api.routers.applications import router as applications_router
 from src.api.routers.rico_chat import router as rico_chat_router
@@ -89,6 +90,7 @@ app.add_middleware(
 # ── Routers ───────────────────────────────────────────────────────────────────
 
 app.include_router(auth_router)
+app.include_router(actions_router)
 app.include_router(agent_router)
 app.include_router(rico_chat_router)
 app.include_router(jobs_router)
@@ -141,6 +143,7 @@ def health() -> Dict[str, Any]:
             "stats":        "/api/v1/stats",
             "settings":     "/api/v1/settings",
             "pipeline":     "/api/v1/pipeline/status",
+            "actions":      "/api/v1/actions/run",
             "rico_chat":    "/api/v1/rico/chat",
             "docs":         "/api/docs",
         },
