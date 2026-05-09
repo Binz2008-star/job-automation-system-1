@@ -15,3 +15,5 @@ pydantic
 PyMuPDF
 python-docx
 filelock
+redis
+rq
