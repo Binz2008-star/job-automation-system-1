@@ -33,25 +33,61 @@ dashboard.html
 # Cache directories
 .cache/
 
-# Node
+# Node / Next.js build
 node_modules/
 apps/web/node_modules/
+apps/web/.next/
+apps/web/.vercel/
+.vercel/
+
+# Local tooling
+.claude/
 
 # Gmail OAuth credentials
 credentials.json
 token.json
 data/gmail_review_queue.json
 
+# Coverage / logs / debug
+.coverage
+logs/
+static/
+*.log
+
+# Local runtime artifacts
+cookies.txt
+test_openai_direct.py
+SECURITY_AUDIT_REPORT.md
+debug_outputs/
+qa_destruction_report.txt
+bandit_out.json
+
 # Data files (except CV)
 data/*.json
+data/*.html
+data/rico/
 !data/cv.pdf
+
+# Local export artifacts
+linkedin_export_new.zip
 
 # Personal LinkedIn export data
 linkedin_export_clean/
-linkedin_export_new.zip
+linkedin_data/
+linkedin_data.zip/
+*_export_clean/
+local_exports/
+exports/
+*LinkedInDataExport*.zip
+*.zip.zip
 
 # Gmail processing output
 gmail_dryrun_output.txt
+*_dryrun_output.txt
+subjects.txt
+
+# Debug outputs
+debug_outputs/
 
 # Generated test/orchestrator output
 orchestrator_test_results.json

@@ -258,6 +258,102 @@ class RicoDB:
                     )
             conn.commit()
 
+    # ------------------------------------------------------------------
+    # User-scoped recommendation / application queries
+    # ------------------------------------------------------------------
+
+    def get_recommendations(
+        self,
+        user_id: str,
+        status: Optional[str] = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """Return user-scoped job recommendations from rico_job_recommendations."""
+        filters = ["user_id = %s"]
+        params: List[Any] = [user_id]
+        if status:
+            filters.append("status = %s")
+            params.append(status)
+        where = " AND ".join(filters)
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT job_key, job, repo_score, rico_score, explanation, status, created_at, updated_at
+                    FROM rico_job_recommendations
+                    WHERE {where}
+                    ORDER BY updated_at DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    params + [limit, offset],
+                )
+                rows = cur.fetchall()
+        result: List[Dict[str, Any]] = []
+        for r in rows:
+            job = dict(r["job"]) if isinstance(r["job"], dict) else {}
+            result.append({
+                "job_id": r["job_key"],
+                "title": job.get("title", ""),
+                "company": job.get("company", ""),
+                "location": job.get("location", ""),
+                "link": job.get("link", ""),
+                "score": r["rico_score"] or r["repo_score"] or 0,
+                "status": r["status"],
+                "notes": r["explanation"] or "",
+                "date_applied": r["created_at"].isoformat() if r["created_at"] else None,
+                "date_updated": r["updated_at"].isoformat() if r["updated_at"] else None,
+            })
+        return result
+
+    def update_recommendation_status(
+        self,
+        user_id: str,
+        job_key: str,
+        status: str,
+        notes: Optional[str] = None,
+    ) -> bool:
+        """Update status of a user's recommendation. Returns True if row found."""
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE rico_job_recommendations
+                    SET status = %s, updated_at = now()
+                    WHERE user_id = %s AND job_key = %s
+                    """,
+                    (status, user_id, job_key),
+                )
+                affected = cur.rowcount
+            conn.commit()
+        return affected > 0
+
+    def get_recommendation_stats(self, user_id: str) -> Dict[str, Any]:
+        """Aggregate counts per status for a single user."""
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT status, COUNT(*) AS cnt
+                    FROM rico_job_recommendations
+                    WHERE user_id = %s
+                    GROUP BY status
+                    """,
+                    (user_id,),
+                )
+                rows = cur.fetchall()
+        total = sum(r["cnt"] for r in rows)
+        by_status = {r["status"]: r["cnt"] for r in rows}
+        return {
+            "total": total,
+            "by_status": by_status,
+            "applied": by_status.get("applied", 0),
+            "saved": by_status.get("saved", 0),
+            "interview": by_status.get("interview", 0),
+            "rejected": by_status.get("rejected", 0),
+            "offer": by_status.get("offer", 0),
+        }
+
 
 def init_rico_db() -> bool:
     db = RicoDB()
