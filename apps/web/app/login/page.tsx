@@ -29,8 +29,9 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">
       <div className="w-full max-w-sm">
+        {/* Brand */}
         <div className="mb-8 text-center">
-          <Link href="/" className="text-lg font-bold text-white">
+          <Link href="/" className="text-lg font-bold text-white tracking-tight">
             Rico AI
           </Link>
           <p className="mt-1 text-sm text-zinc-400">Sign in to your account</p>
@@ -40,9 +41,13 @@ export default function LoginPage() {
           onSubmit={handleSubmit}
           className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/60 p-6"
         >
+          {/* Email */}
           <div>
-            <label className="mb-1.5 block text-sm text-zinc-400">Email</label>
+            <label htmlFor="email" className="mb-1.5 block text-sm text-zinc-400">
+              Email
+            </label>
             <input
+              id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -53,11 +58,21 @@ export default function LoginPage() {
             />
           </div>
 
+          {/* Password + forgot link */}
           <div>
-            <label className="mb-1.5 block text-sm text-zinc-400">
-              Password
-            </label>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label htmlFor="password" className="text-sm text-zinc-400">
+                Password
+              </label>
+              <Link
+                href="/forgot-password"
+                className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <input
+              id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -68,31 +83,22 @@ export default function LoginPage() {
             />
           </div>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {/* Error */}
+          {error && (
+            <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+              {error}
+            </p>
+          )}
 
+          {/* Submit */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? "Signing in…" : "Sign in"}
           </button>
-
-          <p className="text-center text-xs text-zinc-500">
-            <Link
-              href="/forgot-password"
-              className="hover:text-zinc-300 underline underline-offset-2"
-            >
-              Forgot your password?
-            </Link>
-          </p>
         </form>
-
-        <p className="mt-4 text-center text-xs text-zinc-600">
-          Auth via{" "}
-          <code className="text-zinc-500">POST /api/v1/auth/login</code> ·
-          cookie-based session
-        </p>
       </div>
     </main>
   );

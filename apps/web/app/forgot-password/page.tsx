@@ -15,7 +15,7 @@ export default function ForgotPasswordPage() {
     try {
       await forgotPassword(email.trim());
     } catch {
-      // Swallow errors — always show generic success (matches backend behaviour)
+      // Always show generic success — never reveal whether an email exists
     } finally {
       setLoading(false);
       setSubmitted(true);
@@ -25,8 +25,9 @@ export default function ForgotPasswordPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-zinc-950 px-4">
       <div className="w-full max-w-sm">
+        {/* Brand */}
         <div className="mb-8 text-center">
-          <Link href="/" className="text-lg font-bold text-white">
+          <Link href="/" className="text-lg font-bold text-white tracking-tight">
             Rico AI
           </Link>
           <p className="mt-1 text-sm text-zinc-400">Reset your password</p>
@@ -34,16 +35,19 @@ export default function ForgotPasswordPage() {
 
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-6">
           {submitted ? (
-            <div className="flex flex-col gap-4 text-center">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-400">
+                Email sent
+              </div>
               <p className="text-sm text-zinc-300">
-                If that email is registered, a reset link has been sent.
+                If that address is registered, a reset link is on its way.
               </p>
               <p className="text-xs text-zinc-500">
-                Check your server logs if you are in a local development environment.
+                Can&apos;t find it? Check your spam folder.
               </p>
               <Link
                 href="/login"
-                className="text-xs text-indigo-400 hover:text-indigo-300 underline underline-offset-2"
+                className="mt-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors underline underline-offset-2"
               >
                 Back to sign in
               </Link>
@@ -51,10 +55,11 @@ export default function ForgotPasswordPage() {
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="mb-1.5 block text-sm text-zinc-400">
+                <label htmlFor="email" className="mb-1.5 block text-sm text-zinc-400">
                   Email address
                 </label>
                 <input
+                  id="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -68,7 +73,7 @@ export default function ForgotPasswordPage() {
               <button
                 type="submit"
                 disabled={loading || !email.trim()}
-                className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading ? "Sending…" : "Send reset link"}
               </button>
@@ -76,9 +81,9 @@ export default function ForgotPasswordPage() {
               <p className="text-center text-xs text-zinc-500">
                 <Link
                   href="/login"
-                  className="hover:text-zinc-300 underline underline-offset-2"
+                  className="text-zinc-400 hover:text-white transition-colors"
                 >
-                  Back to sign in
+                  ← Back to sign in
                 </Link>
               </p>
             </form>
