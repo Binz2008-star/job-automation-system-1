@@ -6,7 +6,7 @@ All persistence is delegated to repositories.settings_repo.
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from src.db import is_db_available
 from src.repositories import settings_repo
@@ -24,21 +24,21 @@ _DEFAULTS: Dict[str, Any] = {
 _ALLOWED_KEYS = frozenset(_DEFAULTS)
 
 
-def get_settings() -> Dict[str, Any]:
+def get_settings(user_id: Optional[str] = None) -> Dict[str, Any]:
     """Effective settings: env-var defaults overridden by DB row."""
     base = dict(_DEFAULTS)
     base["exclude_keywords"] = _parse_csv(os.getenv("EXCLUDE_KEYWORDS", ""))
     base["telegram_chat_id"] = os.getenv("TELEGRAM_CHAT_ID", "")
 
     if is_db_available():
-        db_row = settings_repo.read()
+        db_row = settings_repo.read(user_id=user_id)
         if db_row:
             base.update(db_row)
 
     return base
 
 
-def update_settings(data: Dict[str, Any]) -> Dict[str, Any]:
+def update_settings(data: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Persist a subset of settings. Unknown keys are silently dropped.
     Returns the new full effective settings dict.
@@ -46,12 +46,12 @@ def update_settings(data: Dict[str, Any]) -> Dict[str, Any]:
     clean = {k: v for k, v in data.items() if k in _ALLOWED_KEYS}
 
     if is_db_available():
-        settings_repo.upsert(clean)
+        settings_repo.upsert(clean, user_id=user_id)
 
     if "exclude_keywords" in clean:
         os.environ["EXCLUDE_KEYWORDS"] = ",".join(str(k) for k in clean["exclude_keywords"])
 
-    return get_settings()
+    return get_settings(user_id=user_id)
 
 
 def _parse_csv(value: str) -> List[str]:

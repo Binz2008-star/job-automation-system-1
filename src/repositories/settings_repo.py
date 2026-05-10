@@ -11,12 +11,11 @@ from src.db import get_db_connection
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_USER_ID = "default"
-
-
-def read() -> Optional[Dict[str, Any]]:
+def read(user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Load settings row from Postgres.
+    When ``user_id`` is provided, returns that user's row; otherwise falls back
+    to the legacy "default" row for the single-user pipeline.
     Returns None if the row doesn't exist or DB is unavailable.
     """
     conn = get_db_connection()
@@ -28,7 +27,7 @@ def read() -> Optional[Dict[str, Any]]:
                 """SELECT include_keywords, exclude_keywords, min_score,
                           max_daily_applies, telegram_chat_id
                    FROM settings WHERE user_id = %s""",
-                (_DEFAULT_USER_ID,),
+                (user_id or "default",),
             )
             row = cur.fetchone()
         if not row:
@@ -47,8 +46,8 @@ def read() -> Optional[Dict[str, Any]]:
         conn.close()
 
 
-def upsert(data: Dict[str, Any]) -> None:
-    """Insert or update the settings row for the default user."""
+def upsert(data: Dict[str, Any], user_id: Optional[str] = None) -> None:
+    """Insert or update the settings row for the given user."""
     conn = get_db_connection()
     if not conn:
         return
@@ -70,7 +69,7 @@ def upsert(data: Dict[str, Any]) -> None:
                     updated_at        = NOW()
                 """,
                 (
-                    _DEFAULT_USER_ID,
+                    user_id or "default",
                     data.get("include_keywords"),
                     data.get("exclude_keywords"),
                     data.get("min_score"),

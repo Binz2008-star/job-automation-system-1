@@ -26,7 +26,7 @@ def list_applications(
     status: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
-    _user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     if status and status not in VALID_STATUSES:
         raise HTTPException(
@@ -34,7 +34,7 @@ def list_applications(
             detail=f"Invalid status. Valid values: {sorted(VALID_STATUSES)}",
         )
 
-    all_apps: List[Dict[str, Any]] = get_all()
+    all_apps: List[Dict[str, Any]] = get_all(user_id=user["email"])
     if status:
         all_apps = [a for a in all_apps if a.get("status") == status]
 
@@ -53,7 +53,7 @@ def list_applications(
 def update_application(
     job_id: str,
     req: StatusUpdateRequest,
-    _user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ) -> StatusUpdateResponse:
     if req.status not in VALID_STATUSES:
         raise HTTPException(
@@ -61,11 +61,11 @@ def update_application(
             detail=f"Invalid status {req.status!r}. Valid: {sorted(VALID_STATUSES)}",
         )
 
-    target = find_by_job_id(job_id)
+    target = find_by_job_id(job_id, user_id=user["email"])
     if not target:
         raise HTTPException(status_code=404, detail=f"Application {job_id!r} not found")
 
-    ok = update_status(target, req.status, req.notes or "")
+    ok = update_status(target, req.status, req.notes or "", user_id=user["email"])
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to update application status")
 
@@ -73,5 +73,5 @@ def update_application(
 
 
 @router.get("/stats")
-def application_stats(_user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    return get_stats()
+def application_stats(user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    return get_stats(user_id=user["email"])

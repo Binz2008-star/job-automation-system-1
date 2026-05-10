@@ -16,14 +16,14 @@ router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 
 
 @router.get("", response_model=SettingsResponse)
-def read_settings(_user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    return get_settings()
+def read_settings(user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    return get_settings(user_id=user["email"])
 
 
 @router.put("", response_model=SettingsResponse)
 def write_settings(
     body: SettingsUpdateRequest,
-    _user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     data = {k: v for k, v in body.model_dump().items() if v is not None}
-    return update_settings(data)
+    return update_settings(data, user_id=user["email"])
