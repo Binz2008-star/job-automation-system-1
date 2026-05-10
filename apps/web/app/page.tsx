@@ -35,7 +35,7 @@ export default function HomePage() {
           Now in early access
         </div>
 
-        <h1 className="mb-6 text-5xl font-bold leading-[1.1] tracking-tight text-white sm:text-6xl md:text-7xl">
+        <h1 className="mb-6 text-4xl font-bold leading-[1.1] tracking-tight text-white sm:text-5xl md:text-6xl lg:text-7xl">
           The AI that hunts jobs
           <br />
           <span className="text-indigo-400">while you live your life.</span>

@@ -99,7 +99,7 @@ export default function ChatPage() {
 
   return (
     <DashboardShell title="Chat">
-      <div className="flex max-w-2xl flex-col gap-3" style={{ height: "calc(100vh - 11rem)" }}>
+      <div className="flex max-w-2xl flex-col gap-3 h-[calc(100dvh-13rem)] md:h-[calc(100dvh-11rem)]">
         {/* Message area */}
         <div className="flex flex-1 flex-col overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
           {/* Empty state */}

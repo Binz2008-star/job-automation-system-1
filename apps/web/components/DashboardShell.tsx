@@ -68,16 +68,16 @@ export function DashboardShell({
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header — mobile */}
         <header className="flex items-center justify-between border-b border-zinc-800 bg-zinc-900/40 px-4 py-3 md:hidden">
-          <Link href="/" className="text-sm font-bold text-white">
+          <Link href="/" className="shrink-0 text-sm font-bold text-white">
             Rico AI
           </Link>
-          <nav className="flex gap-3">
+          <nav className="flex gap-1 overflow-x-auto pl-3">
             {NAV.map(({ href, label }) => (
               <Link
                 key={href}
                 href={href}
-                className={`text-xs transition-colors ${
-                  pathname === href ? "text-white" : "text-zinc-400 hover:text-white"
+                className={`shrink-0 rounded-md px-2.5 py-2 text-xs transition-colors ${
+                  pathname === href ? "bg-zinc-800 text-white" : "text-zinc-400 hover:text-white"
                 }`}
               >
                 {label}

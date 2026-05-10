@@ -50,7 +50,7 @@ function ProfileDetail({ profile }: { profile: ProfileResponse }) {
     <div className="flex flex-col gap-4">
       {/* Identity */}
       <StatusCard title="Identity" badge="live">
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5 text-sm">
+        <dl className="grid grid-cols-1 gap-y-3 text-sm sm:grid-cols-2 sm:gap-x-6">
           <Row label="Name">
             <span className="text-zinc-200">{profile.name ?? "—"}</span>
           </Row>
@@ -83,7 +83,7 @@ function ProfileDetail({ profile }: { profile: ProfileResponse }) {
       {/* Job preferences */}
       {hasJobPrefs ? (
         <StatusCard title="Job preferences" badge="live">
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+          <dl className="grid grid-cols-1 gap-y-3 text-sm sm:grid-cols-2 sm:gap-x-6">
             {(profile.target_roles?.length ?? 0) > 0 && (
               <Row label="Target roles">
                 <div className="flex flex-wrap gap-1">
