@@ -1,6 +1,12 @@
+// Absolute backend URL — used only for server-side (SSR) fetches such as fetchHealth().
 const RICO_API =
   process.env.NEXT_PUBLIC_RICO_API ??
   "https://rico-job-automation-api.onrender.com";
+
+// All client-side fetches route through /proxy so the session cookie is set and
+// sent as a first-party (same-origin) cookie, bypassing Chrome's cross-site
+// cookie blocking. Next.js rewrites /proxy/* → RICO_API/* server-side.
+const PROXY = "/proxy";
 
 // ── Health ────────────────────────────────────────────────────────────────────
 
@@ -19,6 +25,7 @@ export interface HealthResponse {
   rico: RicoStatus;
 }
 
+// Server-side only — uses absolute URL (relative URLs don't resolve in Node.js).
 export async function fetchHealth(): Promise<HealthResponse> {
   const res = await fetch(`${RICO_API}/health`);
   if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
@@ -34,7 +41,7 @@ export interface MeResponse {
 }
 
 export async function fetchMe(): Promise<MeResponse> {
-  const res = await fetch(`${RICO_API}/api/v1/me`, {
+  const res = await fetch(`${PROXY}/api/v1/me`, {
     credentials: "include",
   });
   if (!res.ok) throw new Error(`/me failed: ${res.status}`);
@@ -50,7 +57,7 @@ export async function login(
   email: string,
   password: string
 ): Promise<LoginResponse> {
-  const res = await fetch(`${RICO_API}/api/v1/auth/login`, {
+  const res = await fetch(`${PROXY}/api/v1/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -64,7 +71,7 @@ export async function login(
 }
 
 export async function logout(): Promise<void> {
-  await fetch(`${RICO_API}/api/v1/auth/logout`, {
+  await fetch(`${PROXY}/api/v1/auth/logout`, {
     method: "POST",
     credentials: "include",
   });
@@ -95,7 +102,7 @@ export interface ProfileResponse {
 }
 
 export async function fetchProfile(): Promise<ProfileResponse> {
-  const res = await fetch(`${RICO_API}/api/v1/rico/profile`, {
+  const res = await fetch(`${PROXY}/api/v1/rico/profile`, {
     credentials: "include",
   });
   if (!res.ok) throw new Error(`Profile fetch failed: ${res.status}`);
@@ -117,7 +124,7 @@ export interface SavedSearchesResponse {
 }
 
 export async function fetchSavedSearches(): Promise<SavedSearchesResponse> {
-  const res = await fetch(`${RICO_API}/api/v1/rico/settings/saved-searches`, {
+  const res = await fetch(`${PROXY}/api/v1/rico/settings/saved-searches`, {
     credentials: "include",
   });
   if (!res.ok) throw new Error(`Saved searches fetch failed: ${res.status}`);
@@ -128,7 +135,7 @@ export async function createSavedSearch(
   query: string,
   filters?: Record<string, unknown>
 ): Promise<{ status: string; query: string }> {
-  const res = await fetch(`${RICO_API}/api/v1/rico/settings/saved-searches`, {
+  const res = await fetch(`${PROXY}/api/v1/rico/settings/saved-searches`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -141,7 +148,7 @@ export async function createSavedSearch(
 // ── Password reset ────────────────────────────────────────────────────────────
 
 export async function forgotPassword(email: string): Promise<{ message: string }> {
-  const res = await fetch(`${RICO_API}/api/v1/auth/forgot-password`, {
+  const res = await fetch(`${PROXY}/api/v1/auth/forgot-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
@@ -154,7 +161,7 @@ export async function resetPassword(
   token: string,
   new_password: string
 ): Promise<{ message: string }> {
-  const res = await fetch(`${RICO_API}/api/v1/auth/reset-password`, {
+  const res = await fetch(`${PROXY}/api/v1/auth/reset-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token, new_password }),
@@ -172,7 +179,7 @@ export async function resetPassword(
 export async function sendChat(
   message: string
 ): Promise<{ reply?: string; message?: string }> {
-  const res = await fetch(`${RICO_API}/api/v1/rico/chat`, {
+  const res = await fetch(`${PROXY}/api/v1/rico/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",

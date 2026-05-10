@@ -45,3 +45,16 @@ data/gmail_review_queue.json
 # Data files (except CV)
 data/*.json
 !data/cv.pdf
+
+# Personal LinkedIn export data
+linkedin_export_clean/
+linkedin_export_new.zip
+
+# Gmail processing output
+gmail_dryrun_output.txt
+
+# Generated test/orchestrator output
+orchestrator_test_results.json
+test_results.json
+qa_destruction_report.txt
+bandit_out.json

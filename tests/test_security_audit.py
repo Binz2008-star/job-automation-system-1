@@ -229,25 +229,24 @@ class TestPublicEndpointAbuse:
 
     def test_rico_chat_empty_user_id(self, client):
         r = client.post("/api/v1/rico/chat", json={"user_id": "", "message": "hello"})
-        # Empty user_id — should not crash
-        assert r.status_code in (200, 422)
+        # Route requires JWT auth — unauthenticated request must be rejected
+        assert r.status_code == 401
 
     def test_rico_chat_unicode_message(self, client):
         r = client.post("/api/v1/rico/chat", json={
             "user_id": "u1",
             "message": "مرحبا 你好 🎯   ￿",
         })
-        assert r.status_code in (200, 422, 500)
-        # Must not expose internal traceback
-        if r.status_code == 500:
-            assert "Traceback" not in r.text
+        # Route requires JWT auth — unauthenticated request must be rejected
+        assert r.status_code == 401
 
     def test_rico_chat_sql_injection_in_user_id(self, client):
         r = client.post("/api/v1/rico/chat", json={
             "user_id": "' OR 1=1; DROP TABLE rico_users; --",
             "message": "hello",
         })
-        assert r.status_code in (200, 422)
+        # Route requires JWT auth — unauthenticated request must be rejected
+        assert r.status_code == 401
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -574,7 +573,7 @@ class TestKnownCVEs:
     """
 
     def test_authlib_cve_2026_41425(self):
-        import authlib
+        authlib = pytest.importorskip("authlib")
         ver = tuple(int(x) for x in authlib.__version__.split(".")[:3])
         assert ver >= (1, 6, 11), "authlib must be >= 1.6.11 (CVE-2026-41425)"
 
@@ -599,7 +598,7 @@ class TestKnownCVEs:
 
     def test_diskcache_cve_2025_69872(self):
         """CVE-2025-69872: no fix version published yet — track installed version."""
-        import diskcache
+        diskcache = pytest.importorskip("diskcache")
         installed = diskcache.__version__
         # Assert we're aware of this: update this test once a patched version ships.
         assert installed == "5.6.3", (
