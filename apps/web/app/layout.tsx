@@ -2,8 +2,18 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Rico AI",
-  description: "Your autonomous AI job hunter.",
+  title: "Rico AI — Autonomous AI Job Search",
+  description: "Rico finds jobs that match your profile, scores them by fit, and helps you apply — so you can focus on the right opportunities.",
+  openGraph: {
+    title: "Rico AI — Autonomous AI Job Search",
+    description: "Rico finds jobs that match your profile, scores them by fit, and helps you apply — so you can focus on the right opportunities.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Rico AI — Autonomous AI Job Search",
+    description: "Rico finds jobs that match your profile, scores them by fit, and helps you apply — so you can focus on the right opportunities.",
+  },
 };
 
 export default function RootLayout({

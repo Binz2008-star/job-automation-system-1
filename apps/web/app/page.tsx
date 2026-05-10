@@ -15,6 +15,12 @@ const features = [
   },
 ];
 
+const trust = [
+  "UAE-focused search",
+  "Profile-aware matching",
+  "Human-approved applications",
+];
+
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -43,8 +49,8 @@ export default function HomePage() {
 
         <p className="mx-auto mb-10 max-w-2xl text-lg leading-relaxed text-zinc-400">
           Rico is an autonomous AI job-search agent. It finds roles that fit
-          your profile, scores them, and helps you apply — without you lifting
-          a finger.
+          your profile, scores them, and helps you apply — so you can focus
+          on the right opportunities.
         </p>
 
         <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -52,19 +58,19 @@ export default function HomePage() {
             href="/login"
             className="w-full rounded-lg bg-indigo-600 px-8 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 sm:w-auto"
           >
-            Get started free
+            Start setup
           </Link>
           <Link
             href="/dashboard"
             className="w-full rounded-lg border border-zinc-700 px-8 py-3 text-sm font-semibold text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white sm:w-auto"
           >
-            Open dashboard
+            View dashboard
           </Link>
         </div>
       </section>
 
       {/* Feature grid */}
-      <section className="mx-auto max-w-5xl px-6 pb-24">
+      <section className="mx-auto max-w-5xl px-6 pb-10">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {features.map((f) => (
             <div
@@ -74,6 +80,18 @@ export default function HomePage() {
               <h3 className="mb-2 text-sm font-semibold text-white">{f.title}</h3>
               <p className="text-sm leading-relaxed text-zinc-400">{f.desc}</p>
             </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Trust row */}
+      <section className="mx-auto max-w-5xl px-6 pb-24">
+        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 pt-6">
+          {trust.map((item) => (
+            <span key={item} className="flex items-center gap-2 text-xs text-zinc-500">
+              <span className="h-1 w-1 rounded-full bg-indigo-500" />
+              {item}
+            </span>
           ))}
         </div>
       </section>
