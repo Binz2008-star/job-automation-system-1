@@ -12,6 +12,11 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 from src.rico_identity import get_rico_system_prompt
+from src.rico_openai_runtime import (
+    OPENAI_FALLBACK_MODEL,
+    OPENAI_PRIMARY_MODEL,
+    call_openai_minimal,
+)
 from src.rico_safety import RicoSafetyGuard
 
 
@@ -49,29 +54,36 @@ class RicoOpenAIAgent:
         if not self.available:
             return self._fallback_response()
 
-        try:
-            from openai import OpenAI
+        # Delegate to the minimal Responses API helper. Tools / structured
+        # output / streaming are intentionally disabled until the prod call
+        # is proven stable end-to-end (see PR description).
+        profile_context = (
+            json.dumps(user_context, ensure_ascii=False)
+            if user_context else None
+        )
+        result = call_openai_minimal(user_message, profile_context=profile_context)
 
-            client = OpenAI(api_key=self.api_key)
-            response = client.responses.create(
-                model=self.model,
-                input=[
-                    {"role": "system", "content": get_rico_system_prompt()},
-                    {"role": "user", "content": self._build_user_prompt(user_message, user_context)},
-                ],
-                tools=self._tool_schemas(),
-            )
+        if result.get("success"):
             return {
                 "type": "openai_response",
-                "message": getattr(response, "output_text", None) or "I understood. I’ll keep helping you move forward.",
-                "model": self.model,
+                "message": result["text"],
+                "model": result.get("model") or self.model,
             }
-        except Exception as exc:
-            return {
-                "type": "openai_error_fallback",
-                "message": "I understood. I can still help while the AI reasoning layer is being configured.",
-                "error": exc.__class__.__name__,
-            }
+
+        # Failure: surface structured diagnostics so the smoke endpoint and
+        # chat response carry actionable error info.  Never include the API
+        # key, raw exception headers, or the user's profile contents.
+        return {
+            "type": "openai_error_fallback",
+            "message": result.get(
+                "text",
+                "I understood. I can still help while the AI reasoning layer is being configured.",
+            ),
+            "error": result.get("error"),
+            "error_detail": result.get("error_detail"),
+            "openai_model": result.get("openai_model") or OPENAI_PRIMARY_MODEL,
+            "fallback_model": result.get("fallback_model") or OPENAI_FALLBACK_MODEL,
+        }
 
     def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> RicoToolResult:
         if tool_name not in self.tools:

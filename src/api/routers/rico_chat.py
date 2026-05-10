@@ -8,6 +8,7 @@ Routes:
   GET  /api/v1/rico/profile                     user profile           (JWT required)
   GET  /api/v1/rico/settings/saved-searches     list saved searches    (JWT required)
   POST /api/v1/rico/settings/saved-searches     save a search          (JWT required)
+  GET  /api/v1/rico/openai-smoke                OpenAI runtime probe   (JWT required)
   POST /api/v1/rico/upload-cv                   CV file upload + parsing
   POST /api/v1/rico/webhooks/telegram           Telegram bot webhook (called by Telegram)
   POST /api/v1/rico/webhooks/jotform            Jotform onboarding webhook (called by Jotform)
@@ -117,6 +118,33 @@ def rico_chat(request: Request, payload: RicoChatRequest) -> Dict[str, Any]:
     user = get_current_user(request)   # raises 401 if unauthenticated
     user_id = user["email"]            # trust the JWT, never the request body
     return chat_service.send_message(user_id=user_id, message=payload.message)
+
+
+@router.get("/openai-smoke")
+@limiter.limit(LIMIT_CHAT)
+def rico_openai_smoke(request: Request) -> Dict[str, Any]:
+    """Minimal OpenAI runtime probe.
+
+    Sends "Say OK" through the same minimal Responses API path used by chat,
+    so a green smoke means the prod OpenAI integration is healthy. Never
+    leaks the API key or full profile data — only the structured error.
+    """
+    get_current_user(request)  # raises 401 if unauthenticated
+    from src.rico_openai_runtime import call_openai_minimal
+
+    result = call_openai_minimal("Say OK", smoke=True)
+    return {
+        "success": result.get("success", False),
+        "model": result.get("model") or result.get("openai_model"),
+        "fallback_model": result.get("fallback_model"),
+        "response": result.get("text"),
+        "error": result.get("error"),
+        "error_detail": result.get("error_detail"),
+        "openai_available": result.get(
+            "openai_available",
+            bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_AI_API")),
+        ),
+    }
 
 
 @router.post("/upload-cv")
