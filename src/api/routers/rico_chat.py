@@ -3,8 +3,8 @@ src/api/routers/rico_chat.py
 HTTP adapters that expose Rico AI flows through the layered API.
 Rico internals are not modified — this is a pure routing shim.
 
-Routes (all public — no JWT required, consistent with Rico's original design):
-  POST /api/v1/rico/chat              natural-language chat
+Routes:
+  POST /api/v1/rico/chat              natural-language chat  (JWT required)
   POST /api/v1/rico/upload-cv         CV file upload + parsing
   POST /api/v1/rico/webhooks/telegram Telegram bot webhook (called by Telegram)
   POST /api/v1/rico/webhooks/jotform  Jotform onboarding webhook (called by Jotform)
@@ -14,12 +14,14 @@ from __future__ import annotations
 import logging
 import os
 import re
+import secrets
 from typing import Any, Dict
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 import src.services.chat_service as chat_service
+from src.api.deps import get_current_user
 from src.api.rate_limit import LIMIT_CHAT, LIMIT_UPLOAD, LIMIT_WEBHOOK, limiter
 
 logger = logging.getLogger(__name__)
@@ -40,15 +42,33 @@ def _safe_filename(name: str | None) -> str:
     return name.strip() or "upload"
 
 
+def _validate_jotform_secret(request: Request) -> None:
+    """Reject requests when JOTFORM_WEBHOOK_SECRET is configured but not matched."""
+    webhook_secret = os.getenv("JOTFORM_WEBHOOK_SECRET", "").strip()
+    if not webhook_secret:
+        return  # not configured — allow (dev mode)
+    provided = (
+        request.headers.get("X-Jotform-Signature")
+        or request.headers.get("X-Webhook-Secret")
+        or request.query_params.get("secret", "")
+    )
+    if not provided or not secrets.compare_digest(provided, webhook_secret):
+        logger.warning("jotform_webhook: missing or invalid secret")
+        raise HTTPException(status_code=403, detail="Invalid or missing webhook secret")
+
+
 class RicoChatRequest(BaseModel):
-    user_id: str
+    # user_id intentionally absent — derived from the authenticated JWT cookie.
+    # Any user_id field sent in the body is ignored.
     message: str = Field(..., max_length=4096)
 
 
 @router.post("/chat")
 @limiter.limit(LIMIT_CHAT)
 def rico_chat(request: Request, payload: RicoChatRequest) -> Dict[str, Any]:
-    return chat_service.send_message(user_id=payload.user_id, message=payload.message)
+    user = get_current_user(request)   # raises 401 if unauthenticated
+    user_id = user["email"]            # trust the JWT, never the request body
+    return chat_service.send_message(user_id=user_id, message=payload.message)
 
 
 @router.post("/upload-cv")
@@ -87,6 +107,7 @@ async def rico_telegram_webhook(request: Request) -> Dict[str, Any]:
 @router.post("/webhooks/jotform")
 @limiter.limit(LIMIT_WEBHOOK)
 async def rico_jotform_webhook(request: Request) -> Dict[str, Any]:
+    _validate_jotform_secret(request)
     try:
         payload = await request.json()
     except Exception:

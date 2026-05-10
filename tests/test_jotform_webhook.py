@@ -290,3 +290,69 @@ class TestHasUserData:
         from src.services.chat_service import _has_user_data
         assert _has_user_data({"pretty": {"email": "a@b.com"}}) is True
         assert _has_user_data({"pretty": {"full_name": "X"}}) is False
+
+
+# ── Webhook secret validation ─────────────────────────────────────────────────
+
+class TestJotformWebhookSecret:
+    def _post(self, headers=None, env=None):
+        from fastapi.testclient import TestClient
+        from src.api.app import app
+        _env = env or {}
+        with patch.dict(os.environ, _env, clear=False), \
+             patch("src.services.chat_service.handle_jotform_submission",
+                   return_value={"status": "ok", "user_id": "1"}):
+            tc = TestClient(app, raise_server_exceptions=False)
+            return tc.post(
+                "/api/v1/rico/webhooks/jotform",
+                json={"email": "u@x.com", "consent": True},
+                headers=headers or {},
+            )
+
+    def test_no_secret_configured_allows_any_request(self):
+        """When JOTFORM_WEBHOOK_SECRET is absent, all requests are allowed."""
+        env = {k: v for k, v in os.environ.items() if k != "JOTFORM_WEBHOOK_SECRET"}
+        r = self._post(env={**env, "JOTFORM_WEBHOOK_SECRET": ""})
+        assert r.status_code == 200
+
+    def test_correct_secret_header_accepted(self):
+        r = self._post(
+            headers={"X-Jotform-Signature": "mysecret"},
+            env={"JOTFORM_WEBHOOK_SECRET": "mysecret"},
+        )
+        assert r.status_code == 200
+
+    def test_missing_secret_header_rejected_in_production(self):
+        """When secret is configured, requests without it must be rejected (403)."""
+        r = self._post(env={"JOTFORM_WEBHOOK_SECRET": "mysecret"})
+        assert r.status_code == 403
+
+    def test_wrong_secret_rejected(self):
+        r = self._post(
+            headers={"X-Jotform-Signature": "wrongsecret"},
+            env={"JOTFORM_WEBHOOK_SECRET": "mysecret"},
+        )
+        assert r.status_code == 403
+
+
+# ── SubmissionID idempotency ──────────────────────────────────────────────────
+
+class TestSubmissionIdempotency:
+    def test_duplicate_submission_id_returns_accepted(self):
+        from src.rico_jotform_webhook import handle_jotform_submission
+        with patch("src.rico_jotform_webhook._is_duplicate_submission", return_value=True):
+            result = handle_jotform_submission(
+                {"submissionID": "sub-1", "email": "u@x.com"}
+            )
+        assert result["status"] == "accepted"
+        assert "Duplicate" in result["message"]
+
+    def test_new_submission_id_is_not_duplicate(self):
+        from src.rico_jotform_webhook import _is_duplicate_submission
+        with patch("src.rico_jotform_webhook._load_seen_submissions", return_value=set()):
+            assert _is_duplicate_submission("fresh-id") is False
+
+    def test_empty_submission_id_never_duplicate(self):
+        from src.rico_jotform_webhook import _is_duplicate_submission
+        assert _is_duplicate_submission("") is False
+        assert _is_duplicate_submission("?") is False

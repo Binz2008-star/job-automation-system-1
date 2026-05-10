@@ -44,6 +44,40 @@ logger = logging.getLogger(__name__)
 
 # ── Lifespan ─────────────────────────────────────────────────────────────────
 
+_CRITICAL_TABLES = frozenset({"users", "action_audit_log"})
+
+
+def _check_critical_tables() -> None:
+    """Warn at startup if critical migration tables are absent from the DB."""
+    from src.db import get_db_connection
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = ANY(%s)
+                """,
+                (list(_CRITICAL_TABLES),),
+            )
+            found = {row[0] for row in cur.fetchall()}
+        missing = _CRITICAL_TABLES - found
+        if missing:
+            logger.error(
+                "startup_check: missing tables %s — run pending migrations before serving traffic",
+                sorted(missing),
+            )
+        else:
+            logger.info("startup_check: critical tables present")
+    except Exception as exc:
+        logger.warning("startup_check: could not verify tables: %s", exc)
+    finally:
+        conn.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
@@ -52,6 +86,7 @@ async def lifespan(app: FastAPI):
         logger.info("rico_db_init OK")
     except Exception:
         logger.warning("rico_db_init skipped (DB unavailable or tables already exist)")
+    _check_critical_tables()
     yield
 
 

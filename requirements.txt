@@ -22,3 +22,4 @@ rq
 python-jose[cryptography]
 passlib[bcrypt]
 alembic
+httpx

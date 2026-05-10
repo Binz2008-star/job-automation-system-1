@@ -33,6 +33,10 @@ dashboard.html
 # Cache directories
 .cache/
 
+# Node
+node_modules/
+apps/web/node_modules/
+
 # Gmail OAuth credentials
 credentials.json
 token.json

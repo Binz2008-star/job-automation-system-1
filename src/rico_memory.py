@@ -8,6 +8,7 @@ JSON files so Rico can behave like a real agent immediately.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -25,6 +26,20 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 RICO_MEMORY_DIR = DATA_DIR / "rico"
 RICO_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _safe_key(user_id: str) -> str:
+    """Return a sha256 hex digest of user_id safe for use as a filename component."""
+    return hashlib.sha256(user_id.encode()).hexdigest()
+
+
+def _assert_contained(path: Path) -> Path:
+    """Raise ValueError if path resolves outside RICO_MEMORY_DIR."""
+    try:
+        path.resolve().relative_to(RICO_MEMORY_DIR.resolve())
+    except ValueError:
+        raise ValueError(f"Path traversal blocked: {path}")
+    return path
 
 MEMORY_TYPES = {
     "preference",
@@ -53,16 +68,16 @@ class RicoMemoryStore:
     """JSON-backed Rico memory store."""
 
     def _profile_path(self, user_id: str) -> Path:
-        return RICO_MEMORY_DIR / f"profile_{user_id}.json"
+        return _assert_contained(RICO_MEMORY_DIR / f"profile_{_safe_key(user_id)}.json")
 
     def _chat_path(self, user_id: str) -> Path:
-        return RICO_MEMORY_DIR / f"chat_{user_id}.json"
+        return _assert_contained(RICO_MEMORY_DIR / f"chat_{_safe_key(user_id)}.json")
 
     def _signals_path(self, user_id: str) -> Path:
-        return RICO_MEMORY_DIR / f"signals_{user_id}.json"
+        return _assert_contained(RICO_MEMORY_DIR / f"signals_{_safe_key(user_id)}.json")
 
     def _memories_path(self, user_id: str) -> Path:
-        return RICO_MEMORY_DIR / f"memories_{user_id}.json"
+        return _assert_contained(RICO_MEMORY_DIR / f"memories_{_safe_key(user_id)}.json")
 
     def save_profile(self, profile: RicoProfile) -> None:
         payload = asdict(profile)
@@ -238,4 +253,5 @@ class RicoMemoryStore:
         return "\n".join(lines)
 
     def list_profiles(self) -> List[str]:
+        # Returns sha256-keyed stems; callers that need readable IDs must map externally.
         return [p.stem.replace("profile_", "") for p in RICO_MEMORY_DIR.glob("profile_*.json")]

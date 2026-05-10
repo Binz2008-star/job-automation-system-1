@@ -296,3 +296,86 @@ class TestUsersRepo:
         from src.repositories.users_repo import update_last_login
         with patch("src.db.is_db_available", return_value=False):
             update_last_login(1)  # must not raise
+
+
+# ── Login input validation ─────────────────────────────────────────────────────
+
+class TestLoginInputValidation:
+    def test_oversized_login_password_returns_422(self):
+        """bcrypt DoS guard — passwords over 128 chars must be rejected at schema level."""
+        from fastapi.testclient import TestClient
+        from src.api.app import app
+        from src.api.rate_limit import limiter
+        limiter._storage.reset()
+        tc = TestClient(app, raise_server_exceptions=False)
+        r = tc.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@test.com", "password": "A" * 129},
+        )
+        assert r.status_code == 422
+
+    def test_invalid_email_format_returns_422(self):
+        from fastapi.testclient import TestClient
+        from src.api.app import app
+        from src.api.rate_limit import limiter
+        limiter._storage.reset()
+        tc = TestClient(app, raise_server_exceptions=False)
+        r = tc.post(
+            "/api/v1/auth/login",
+            json={"email": "not-an-email", "password": "TestPass123"},
+        )
+        assert r.status_code == 422
+
+
+# ── Production DB-failure fallback guard ───────────────────────────────────────
+
+class TestProductionFallbackGuard:
+    def test_production_db_error_rejects_login(self):
+        """In production mode, a DB error must not allow env-var admin fallback."""
+        from src.api.auth import verify_credentials
+        env = {
+            "ADMIN_EMAIL": "admin@test.com",
+            "ADMIN_PASSWORD": "TestPass123",
+            "ADMIN_PASSWORD_HASH": "",
+            "RICO_ENV": "production",
+            "ALLOW_ENV_AUTH_FALLBACK": "",
+        }
+        with patch("src.repositories.users_repo.get_user_by_email",
+                   side_effect=Exception("db down")), \
+             patch.dict(os.environ, env, clear=False):
+            result = verify_credentials("admin@test.com", "TestPass123")
+        assert result is None
+
+    def test_production_fallback_allowed_when_flag_set(self):
+        """ALLOW_ENV_AUTH_FALLBACK=true re-enables fallback even in production."""
+        from src.api.auth import verify_credentials
+        env = {
+            "ADMIN_EMAIL": "admin@test.com",
+            "ADMIN_PASSWORD": "TestPass123",
+            "ADMIN_PASSWORD_HASH": "",
+            "RICO_ENV": "production",
+            "ALLOW_ENV_AUTH_FALLBACK": "true",
+        }
+        with patch("src.repositories.users_repo.get_user_by_email",
+                   side_effect=Exception("db down")), \
+             patch.dict(os.environ, env, clear=False):
+            result = verify_credentials("admin@test.com", "TestPass123")
+        assert result is not None
+        assert result["role"] == "admin"
+
+    def test_dev_db_error_still_falls_back(self):
+        """Outside production the original fallback behaviour is preserved."""
+        from src.api.auth import verify_credentials
+        env = {
+            "ADMIN_EMAIL": "admin@test.com",
+            "ADMIN_PASSWORD": "TestPass123",
+            "ADMIN_PASSWORD_HASH": "",
+            "RICO_ENV": "development",
+            "ALLOW_ENV_AUTH_FALLBACK": "",
+        }
+        with patch("src.repositories.users_repo.get_user_by_email",
+                   side_effect=Exception("db down")), \
+             patch.dict(os.environ, env, clear=False):
+            result = verify_credentials("admin@test.com", "TestPass123")
+        assert result is not None
+        assert result["role"] == "admin"
