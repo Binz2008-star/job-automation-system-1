@@ -4,10 +4,13 @@ HTTP adapters that expose Rico AI flows through the layered API.
 Rico internals are not modified — this is a pure routing shim.
 
 Routes:
-  POST /api/v1/rico/chat              natural-language chat  (JWT required)
-  POST /api/v1/rico/upload-cv         CV file upload + parsing
-  POST /api/v1/rico/webhooks/telegram Telegram bot webhook (called by Telegram)
-  POST /api/v1/rico/webhooks/jotform  Jotform onboarding webhook (called by Jotform)
+  POST /api/v1/rico/chat                        natural-language chat  (JWT required)
+  GET  /api/v1/rico/profile                     user profile           (JWT required)
+  GET  /api/v1/rico/settings/saved-searches     list saved searches    (JWT required)
+  POST /api/v1/rico/settings/saved-searches     save a search          (JWT required)
+  POST /api/v1/rico/upload-cv                   CV file upload + parsing
+  POST /api/v1/rico/webhooks/telegram           Telegram bot webhook (called by Telegram)
+  POST /api/v1/rico/webhooks/jotform            Jotform onboarding webhook (called by Jotform)
 """
 from __future__ import annotations
 
@@ -16,6 +19,9 @@ import os
 import re
 import secrets
 from typing import Any, Dict
+
+from dataclasses import asdict
+from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
@@ -61,6 +67,48 @@ class RicoChatRequest(BaseModel):
     # user_id intentionally absent — derived from the authenticated JWT cookie.
     # Any user_id field sent in the body is ignored.
     message: str = Field(..., max_length=4096)
+
+
+class SavedSearchRequest(BaseModel):
+    query:   str            = Field(..., min_length=1, max_length=500)
+    filters: Dict[str, Any] = Field(default_factory=dict)
+
+
+@router.get("/profile")
+def rico_get_profile(request: Request) -> Dict[str, Any]:
+    user    = get_current_user(request)
+    user_id = user["email"]
+    from src.repositories.profile_repo import get_profile
+    profile = get_profile(user_id)
+    if profile is None:
+        return {"profile_exists": False, "email": user_id}
+    data = asdict(profile)
+    data["profile_exists"] = True
+    return data
+
+
+@router.get("/settings/saved-searches")
+def rico_list_saved_searches(request: Request) -> Dict[str, Any]:
+    user    = get_current_user(request)
+    user_id = user["email"]
+    from src.repositories.profile_repo import list_saved_searches
+    rows = list_saved_searches(user_id)
+    searches = []
+    for row in rows:
+        r = dict(row)
+        if "created_at" in r and hasattr(r["created_at"], "isoformat"):
+            r["created_at"] = r["created_at"].isoformat()
+        searches.append(r)
+    return {"searches": searches, "total": len(searches)}
+
+
+@router.post("/settings/saved-searches", status_code=201)
+def rico_create_saved_search(request: Request, body: SavedSearchRequest) -> Dict[str, Any]:
+    user    = get_current_user(request)
+    user_id = user["email"]
+    from src.repositories.profile_repo import save_search
+    save_search(user_id, body.query, body.filters)
+    return {"status": "saved", "query": body.query}
 
 
 @router.post("/chat")

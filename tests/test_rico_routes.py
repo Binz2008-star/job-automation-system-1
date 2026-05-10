@@ -451,3 +451,137 @@ class TestJotformWebhookRobustness:
             result = handle_jotform_submission(payload)
         assert result["status"] == "accepted"
         assert "pending" in result["message"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GET /api/v1/me, GET/POST /api/v1/rico/profile, GET/POST saved-searches
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_EMPTY_PROFILE   = {"profile_exists": False, "email": "alice@rico.ai"}
+_FULL_PROFILE    = {
+    "profile_exists": True,
+    "user_id": "alice@rico.ai",
+    "name": "Alice",
+    "email": "alice@rico.ai",
+    "target_roles": ["HSE Manager"],
+    "skills": ["ISO 45001"],
+    "years_experience": 5,
+}
+_SAVED_SEARCHES  = [{"id": 1, "query": "HSE Dubai", "filters": {}, "created_at": "2026-05-10T00:00:00"}]
+
+
+class TestMeRoute:
+    def test_unauthenticated_returns_401(self, client):
+        r = client.get("/api/v1/me")
+        assert r.status_code == 401
+
+    def test_authenticated_returns_200(self, auth_client):
+        r = auth_client.get("/api/v1/me")
+        assert r.status_code == 200
+
+    def test_authenticated_returns_email(self, auth_client):
+        r = auth_client.get("/api/v1/me")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["email"] == "alice@rico.ai"
+        assert body["authenticated"] is True
+
+    def test_authenticated_returns_role(self, auth_client):
+        r = auth_client.get("/api/v1/me")
+        assert "role" in r.json()
+
+
+class TestRicoProfileRoute:
+    def test_unauthenticated_returns_401(self, client):
+        r = client.get("/api/v1/rico/profile")
+        assert r.status_code == 401
+
+    def test_authenticated_empty_profile_returns_200(self, auth_client):
+        with patch("src.repositories.profile_repo.get_profile", return_value=None):
+            r = auth_client.get("/api/v1/rico/profile")
+        assert r.status_code == 200
+        assert r.json()["profile_exists"] is False
+
+    def test_authenticated_empty_profile_has_email(self, auth_client):
+        with patch("src.repositories.profile_repo.get_profile", return_value=None):
+            r = auth_client.get("/api/v1/rico/profile")
+        assert r.json()["email"] == "alice@rico.ai"
+
+    def test_authenticated_full_profile_returns_200(self, auth_client):
+        from src.rico_agent import RicoProfile
+        profile = RicoProfile(user_id="alice@rico.ai", name="Alice",
+                               email="alice@rico.ai", target_roles=["HSE Manager"])
+        with patch("src.repositories.profile_repo.get_profile", return_value=profile):
+            r = auth_client.get("/api/v1/rico/profile")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["profile_exists"] is True
+        assert body["name"] == "Alice"
+        assert "HSE Manager" in body["target_roles"]
+
+    def test_user_id_from_jwt_not_body(self, auth_client):
+        """Route must derive user_id from JWT, not from any request body field."""
+        captured = {}
+        from src.rico_agent import RicoProfile
+
+        def spy(user_id):
+            captured["user_id"] = user_id
+            return RicoProfile(user_id=user_id)
+
+        with patch("src.repositories.profile_repo.get_profile", side_effect=spy):
+            auth_client.get("/api/v1/rico/profile")
+        assert captured["user_id"] == "alice@rico.ai"
+
+
+class TestRicoSavedSearchesRoute:
+    def test_get_unauthenticated_returns_401(self, client):
+        r = client.get("/api/v1/rico/settings/saved-searches")
+        assert r.status_code == 401
+
+    def test_post_unauthenticated_returns_401(self, client):
+        r = client.post("/api/v1/rico/settings/saved-searches",
+                        json={"query": "HSE Dubai"})
+        assert r.status_code == 401
+
+    def test_get_authenticated_returns_200(self, auth_client):
+        with patch("src.repositories.profile_repo.list_saved_searches", return_value=[]):
+            r = auth_client.get("/api/v1/rico/settings/saved-searches")
+        assert r.status_code == 200
+
+    def test_get_returns_empty_list_when_no_searches(self, auth_client):
+        with patch("src.repositories.profile_repo.list_saved_searches", return_value=[]):
+            r = auth_client.get("/api/v1/rico/settings/saved-searches")
+        body = r.json()
+        assert body["searches"] == []
+        assert body["total"] == 0
+
+    def test_get_returns_searches(self, auth_client):
+        rows = [{"id": 1, "query": "HSE Dubai", "filters": {}, "created_at": None}]
+        with patch("src.repositories.profile_repo.list_saved_searches", return_value=rows):
+            r = auth_client.get("/api/v1/rico/settings/saved-searches")
+        body = r.json()
+        assert body["total"] == 1
+        assert body["searches"][0]["query"] == "HSE Dubai"
+
+    def test_post_authenticated_returns_201(self, auth_client):
+        with patch("src.repositories.profile_repo.save_search") as mock_save:
+            r = auth_client.post("/api/v1/rico/settings/saved-searches",
+                                 json={"query": "HSE Manager Dubai"})
+        assert r.status_code == 201
+        assert r.json()["status"] == "saved"
+
+    def test_post_uses_jwt_identity_not_body(self, auth_client):
+        captured = {}
+
+        def spy(user_id, query, filters):
+            captured["user_id"] = user_id
+
+        with patch("src.repositories.profile_repo.save_search", side_effect=spy):
+            auth_client.post("/api/v1/rico/settings/saved-searches",
+                             json={"query": "test", "user_id": "injected@evil.com"})
+        assert captured.get("user_id") == "alice@rico.ai"
+
+    def test_post_empty_query_returns_422(self, auth_client):
+        r = auth_client.post("/api/v1/rico/settings/saved-searches",
+                             json={"query": ""})
+        assert r.status_code == 422

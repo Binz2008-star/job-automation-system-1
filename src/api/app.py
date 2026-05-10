@@ -35,6 +35,7 @@ from src.api.routers.jobs import router as jobs_router
 from src.api.routers.pipeline import router as pipeline_router
 from src.api.routers.settings import router as settings_router
 from src.api.routers.stats import router as stats_router
+from src.api.routers.user import router as user_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -125,6 +126,7 @@ app.add_middleware(
 # ── Routers ───────────────────────────────────────────────────────────────────
 
 app.include_router(auth_router)
+app.include_router(user_router)
 app.include_router(actions_router)
 app.include_router(agent_router)
 app.include_router(rico_chat_router)

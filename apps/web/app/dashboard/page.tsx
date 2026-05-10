@@ -1,5 +1,7 @@
 import { DashboardShell } from "@/components/DashboardShell";
 import { StatusCard } from "@/components/StatusCard";
+import { ProfileSummaryCard } from "@/components/ProfileSummaryCard";
+import { SavedSearchesList } from "@/components/SavedSearchesList";
 import { fetchHealth, type HealthResponse } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -60,32 +62,24 @@ export default async function DashboardPage() {
           <SystemStatus />
         </section>
 
-        {/* Placeholder — profile */}
+        {/* Live — profile from /api/v1/rico/profile */}
         <section>
           <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500">
             Your profile
           </h2>
           <div className="grid gap-4 sm:grid-cols-2">
-            <StatusCard title="Profile summary" badge="placeholder">
-              <p className="text-sm text-zinc-500">
-                Expose{" "}
-                <code className="text-zinc-400">GET /api/v1/rico/profile</code>{" "}
-                to populate this card.
-              </p>
-            </StatusCard>
+            <ProfileSummaryCard />
             <StatusCard title="CV status" badge="placeholder">
               <p className="text-sm text-zinc-500">
                 Expose{" "}
-                <code className="text-zinc-400">
-                  POST /api/v1/rico/upload-cv
-                </code>{" "}
+                <code className="text-zinc-400">POST /api/v1/rico/upload-cv</code>{" "}
                 to show CV status here.
               </p>
             </StatusCard>
           </div>
         </section>
 
-        {/* Placeholder — job search */}
+        {/* Live — saved searches from /api/v1/rico/settings/saved-searches */}
         <section>
           <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500">
             Job search
@@ -94,9 +88,7 @@ export default async function DashboardPage() {
             <StatusCard title="Job matches" badge="placeholder">
               <p className="text-sm text-zinc-500">Connect endpoint</p>
             </StatusCard>
-            <StatusCard title="Saved searches" badge="placeholder">
-              <p className="text-sm text-zinc-500">Connect endpoint</p>
-            </StatusCard>
+            <SavedSearchesList />
             <StatusCard title="Applications" badge="placeholder">
               <p className="text-sm text-zinc-500">Connect endpoint</p>
             </StatusCard>
