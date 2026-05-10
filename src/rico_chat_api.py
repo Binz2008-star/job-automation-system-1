@@ -61,6 +61,49 @@ class RicoChatAPI:
             **{k: v for k, v in raw.items() if v not in (None, "", [], {})},
         }
 
+    # Stable enum of where a chat reply originated. The frontend never sees
+    # secrets — only this label, the model name, and presence booleans.
+    SOURCE_KEYWORD = "keyword"
+    SOURCE_OPENAI = "openai"
+    SOURCE_FALLBACK = "fallback"
+
+    @staticmethod
+    def _source_for_openai_response(response: Dict[str, Any]) -> str:
+        """Map a RicoOpenAIAgent response to ``keyword`` / ``openai`` / ``fallback``.
+
+        Only a successful ``openai_response`` from the API counts as ``openai``.
+        Missing-key, exception fallback, and safety refusals are all reported
+        as ``fallback`` so the diagnostic field stays binary on the OpenAI side.
+        """
+        return RicoChatAPI.SOURCE_OPENAI if response.get("type") == "openai_response" else RicoChatAPI.SOURCE_FALLBACK
+
+    def _finalize(
+        self,
+        response: Dict[str, Any],
+        source: str,
+        *,
+        profile: Any = None,
+    ) -> Dict[str, Any]:
+        """Return a copy of ``response`` with safe diagnostic metadata attached.
+
+        Adds:
+          * ``response_source``  — keyword | openai | fallback
+          * ``openai_available`` — whether OPENAI_API_KEY (or legacy OPEN_AI_API) is set
+          * ``openai_model``     — model name only, never the key
+          * ``profile_context_present`` — whether a loaded profile was available
+
+        Never returns the API key, the user's profile contents, or the user's
+        message. The new dict is fresh so class-level constants like
+        ``_JOB_SEARCH_OPTIONS`` are not mutated.
+        """
+        return {
+            **response,
+            "response_source": source,
+            "openai_available": self.openai_agent.available,
+            "openai_model": self.openai_agent.model,
+            "profile_context_present": profile is not None,
+        }
+
     def _looks_like_cv_upload(self, message: str) -> bool:
         lower = message.lower()
         return bool(CV_FILE_RE.search(message)) or any(
@@ -168,7 +211,11 @@ class RicoChatAPI:
         # ── CV uploads override onboarding entirely ───────────────────────────
         if self._looks_like_cv_upload(message):
             mark_onboarding_complete(user_id)
-            return self._cv_first_profile_response(user_id, message)
+            return self._finalize(
+                self._cv_first_profile_response(user_id, message),
+                self.SOURCE_KEYWORD,
+                profile=None,
+            )
 
         # ── First-time onboarding ─────────────────────────────────────────────
         profile = get_profile(user_id)
@@ -184,7 +231,7 @@ class RicoChatAPI:
                 ),
             }
             self.memory.append_chat_message(user_id, "assistant", response["message"])
-            return response
+            return self._finalize(response, self.SOURCE_KEYWORD, profile=None)
 
         # ── Profile exists but onboarding not yet marked complete in DB ───────
         mark_onboarding_complete(user_id)
@@ -200,7 +247,7 @@ class RicoChatAPI:
             self.memory.append_chat_message(
                 user_id, "assistant", json.dumps(self._JOB_SEARCH_OPTIONS)
             )
-            return self._JOB_SEARCH_OPTIONS
+            return self._finalize(self._JOB_SEARCH_OPTIONS, self.SOURCE_KEYWORD, profile=profile)
 
         if any(phrase in lower for phrase in ["skip this question", "skip", "don't know", "do not know"]):
             response = {
@@ -212,13 +259,21 @@ class RicoChatAPI:
                 "field_status": "skipped",
             }
             self.memory.append_chat_message(user_id, "assistant", response["message"])
-            return response
+            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
 
         if any(phrase in lower for phrase in ["extract", "from the cv", "take it from", "use my cv", "use the cv"]):
-            return self._cv_first_profile_response(user_id, message)
+            return self._finalize(
+                self._cv_first_profile_response(user_id, message),
+                self.SOURCE_KEYWORD,
+                profile=profile,
+            )
 
         if self._looks_like_cv_upload(message):
-            return self._cv_first_profile_response(user_id, message)
+            return self._finalize(
+                self._cv_first_profile_response(user_id, message),
+                self.SOURCE_KEYWORD,
+                profile=profile,
+            )
 
         if "change salary" in lower or "salary" in lower:
             response = {
@@ -226,7 +281,7 @@ class RicoChatAPI:
                 "message": "I updated your salary preferences. I will prioritize stronger salary matches.",
             }
             self.memory.append_chat_message(user_id, "assistant", response["message"])
-            return response
+            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
 
         if any(keyword in lower for keyword in ["find jobs", "search jobs", "jobs", "recommend"]):
             workflow_result = self.system.run_for_profile(profile)
@@ -256,7 +311,7 @@ class RicoChatAPI:
                 "matches": formatted,
             }
             self.memory.append_chat_message(user_id, "assistant", json.dumps(response))
-            return response
+            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
 
         if "apply" in lower:
             response = {
@@ -267,7 +322,7 @@ class RicoChatAPI:
                 ),
             }
             self.memory.append_chat_message(user_id, "assistant", response["message"])
-            return response
+            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
 
         if "interview" in lower:
             response = {
@@ -278,7 +333,7 @@ class RicoChatAPI:
                 ),
             }
             self.memory.append_chat_message(user_id, "assistant", response["message"])
-            return response
+            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
 
         # Open-ended message — delegate to the OpenAI reasoning layer with the
         # user's profile as context. RicoOpenAIAgent.respond() already handles
@@ -287,7 +342,7 @@ class RicoChatAPI:
         user_context = self._build_openai_context(profile)
         response = self.openai_agent.respond(message, user_context=user_context)
         self.memory.append_chat_message(user_id, "assistant", response.get("message", ""))
-        return response
+        return self._finalize(response, self._source_for_openai_response(response), profile=profile)
 
 
 def demo() -> None:
