@@ -167,12 +167,17 @@ def login(request: Request, req: LoginRequest, response: Response) -> LoginRespo
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = create_access_token({"sub": user_info["email"], "role": user_info["role"]})
+    _secure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
     response.set_cookie(
         key=_COOKIE_NAME,
         value=token,
         httponly=True,
-        samesite="strict",
-        secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
+        # SameSite=None;Secure allows cross-origin cookie sending (required when
+        # the frontend and API are on different origins, e.g. localhost vs Render).
+        # SameSite=Lax is used in local dev (COOKIE_SECURE=false) where Secure
+        # cookies cannot be set over plain HTTP.
+        samesite="none" if _secure else "lax",
+        secure=_secure,
         max_age=_ttl_hours() * 3600,
     )
     logger.info("login_success email=%r role=%s", user_info["email"], user_info["role"])
@@ -181,7 +186,12 @@ def login(request: Request, req: LoginRequest, response: Response) -> LoginRespo
 
 @router.post("/logout")
 def logout(response: Response) -> Dict[str, str]:
-    response.delete_cookie(key=_COOKIE_NAME, samesite="strict")
+    _secure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+    response.delete_cookie(
+        key=_COOKIE_NAME,
+        samesite="none" if _secure else "lax",
+        secure=_secure,
+    )
     return {"message": "Logged out"}
 
 
