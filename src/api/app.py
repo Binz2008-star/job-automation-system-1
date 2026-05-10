@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 # ── Lifespan ─────────────────────────────────────────────────────────────────
 
-_CRITICAL_TABLES = frozenset({"users", "action_audit_log"})
+_CRITICAL_TABLES = frozenset({"users", "action_audit_log", "password_reset_tokens"})
 
 
 def _check_critical_tables() -> None:

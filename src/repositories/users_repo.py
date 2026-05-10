@@ -102,6 +102,34 @@ def create_user(email: str, password_hash: str, role: str = "user") -> Optional[
         conn.close()
 
 
+def update_password(email: str, new_hash: str) -> bool:
+    """Update password_hash for the given email. Returns True on success."""
+    from src.db import get_db_connection, is_db_available
+    if not is_db_available():
+        return False
+    conn = get_db_connection()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE users SET password_hash = %s WHERE email = %s AND is_active = TRUE",
+                (new_hash, email.strip().lower()),
+            )
+            updated = cur.rowcount
+        conn.commit()
+        return updated > 0
+    except Exception:
+        logger.exception("users_repo_update_password_failed email=%s", email)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+    finally:
+        conn.close()
+
+
 def update_last_login(user_id: int) -> None:
     """Update last_login_at for the given user (best-effort, non-blocking)."""
     from src.db import get_db_connection, is_db_available

@@ -138,6 +138,34 @@ export async function createSavedSearch(
   return res.json() as Promise<{ status: string; query: string }>;
 }
 
+// ── Password reset ────────────────────────────────────────────────────────────
+
+export async function forgotPassword(email: string): Promise<{ message: string }> {
+  const res = await fetch(`${RICO_API}/api/v1/auth/forgot-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+  return res.json() as Promise<{ message: string }>;
+}
+
+export async function resetPassword(
+  token: string,
+  new_password: string
+): Promise<{ message: string }> {
+  const res = await fetch(`${RICO_API}/api/v1/auth/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, new_password }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as { detail?: string };
+    throw new Error(err.detail ?? `Reset failed: ${res.status}`);
+  }
+  return res.json() as Promise<{ message: string }>;
+}
+
 // ── Chat ──────────────────────────────────────────────────────────────────────
 
 // No user_id field — identity comes exclusively from the session cookie.
