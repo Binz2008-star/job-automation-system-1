@@ -1,14 +1,20 @@
 """Rico AI response layer.
 
 Provider selection (via RICO_AI_PROVIDER env var):
-  hf (default)  -- Hugging Face Inference API, zero OpenAI cost.
+  auto/unset    -- DeepSeek if configured, otherwise Hugging Face, otherwise fallback.
+  hf            -- Hugging Face Inference API, zero OpenAI cost.
   openai        -- OpenAI API, opt-in only for premium mode.
   deepseek      -- DeepSeek API via the OpenAI-compatible SDK path.
 
-When RICO_AI_PROVIDER=hf (or unset):
+When RICO_AI_PROVIDER=hf:
   - HF is called directly for rich replies.
   - OpenAI is never called regardless of OPENAI_API_KEY presence.
   - Templated fallback is used when HF is unavailable.
+
+When RICO_AI_PROVIDER is unset:
+  - DeepSeek is called if DEEPSEEK_API_KEY is present.
+  - Otherwise HF is called if a HF key alias is present.
+  - Templated fallback is used when neither is available.
 
 When RICO_AI_PROVIDER=openai:
   - OpenAI is called if OPENAI_API_KEY is present.
@@ -240,7 +246,7 @@ class RicoOpenAIAgent:
             "type": "fallback_response",
             "message": (
                 "Free mode is active. Rico can help set up your profile and guide your job search using free AI/fallback tools. "
-                "OpenAI advanced reasoning will activate after credits are available."
+                "Advanced reasoning will activate after the configured AI provider is available."
             ),
             "provider": "fallback",
         }

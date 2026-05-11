@@ -78,17 +78,22 @@ class TestFreeProviderMode:
         with patch.dict(os.environ, {"HF_TOKEN": "hf_test_token"}, clear=True):
             assert get_ai_provider() == "huggingface"
 
-    def test_get_ai_provider_hf_priority_over_openai(self):
-        """Test that HF is preferred when both keys are present and no explicit provider."""
-        with patch.dict(
-            os.environ,
-            {"HF_TOKEN": "hf_test", "OPENAI_API_KEY": "sk-test"},
-            clear=True,
-        ):
+    def test_get_ai_provider_auto_detects_hf_api_token_alias(self):
+        """Test that HF_API_TOKEN is treated as a valid HF key alias."""
+        with patch.dict(os.environ, {"HF_API_TOKEN": "hf_test_token"}, clear=True):
             assert get_ai_provider() == "huggingface"
 
+    def test_get_ai_provider_deepseek_priority_over_hf(self):
+        """Test that DeepSeek wins auto-detect when both DeepSeek and HF keys are present."""
+        with patch.dict(
+            os.environ,
+            {"HF_TOKEN": "hf_test", "DEEPSEEK_API_KEY": "dsk-test"},
+            clear=True,
+        ):
+            assert get_ai_provider() == "deepseek"
+
     def test_get_ai_provider_auto_detects_deepseek(self):
-        """Test that a DeepSeek key auto-detects DeepSeek when HF is absent."""
+        """Test that a DeepSeek key auto-detects DeepSeek."""
         with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "dsk-test-token"}, clear=True):
             assert get_ai_provider() == "deepseek"
 

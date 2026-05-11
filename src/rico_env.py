@@ -85,8 +85,8 @@ def env_bool(name: str, default: bool = False) -> bool:
 def _hf_key_present() -> bool:
     """True when any HF key alias is set."""
     return bool(
-        os.getenv("HF_API_KEY")
-        or os.getenv("HF_API_TOKEN")
+        os.getenv("HF_API_TOKEN")
+        or os.getenv("HF_API_KEY")
         or os.getenv("HF_TOKEN")
         or os.getenv("HUGGINGFACE_API_KEY")
     )
@@ -123,6 +123,7 @@ def get_ai_provider() -> str:
             return provider
         logger.warning("Invalid RICO_AI_PROVIDER value: %s. Using auto-detect.", provider)
 
+    # Auto-detect: prefer DeepSeek premium reasoning when configured.
     if _deepseek_key_present():
         return "deepseek"
     if _hf_key_present():

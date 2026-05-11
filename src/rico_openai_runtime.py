@@ -41,7 +41,8 @@ DEEPSEEK_PRIMARY_MODEL = (
 DEEPSEEK_FALLBACK_MODEL = os.getenv("DEEPSEEK_FALLBACK_MODEL", "deepseek-v4-pro")
 
 _FALLBACK_TEXT = (
-    "Free mode is active. Rico can help set up your profile and guide your job search using free AI/fallback."
+    "Free mode is active. Rico can help set up your profile and guide your job search using free AI/fallback tools. "
+    "Advanced reasoning will activate after the configured AI provider is available."
 )
 _RATE_LIMITED_TEXT = (
     "Rico's AI provider is currently rate-limited. "
