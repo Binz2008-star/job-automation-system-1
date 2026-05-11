@@ -152,8 +152,9 @@ class RicoOpenAIAgent:
         if not token:
             return None
 
-        # Use a reliable free-tier instruction model
-        model = os.getenv("RICO_HF_MODEL", "HuggingFaceH4/zephyr-7b-beta")
+        # Use a small, widely-available free-tier model.
+        # Zephyr-7b-beta is often gated/removed; gemma-2b-it is more stable on the free API.
+        model = os.getenv("RICO_HF_MODEL", "google/gemma-2b-it")
         url = f"https://api-inference.huggingface.co/models/{model}"
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
@@ -171,8 +172,11 @@ class RicoOpenAIAgent:
                 headers=headers,
                 timeout=25,
             )
-            if r.status_code == 429:
-                logger.warning("hf_rate_limited")
+            if r.status_code in (429, 503):
+                logger.debug("hf_rate_limited_or_overloaded code=%s", r.status_code)
+                return None
+            if r.status_code == 404:
+                logger.debug("hf_model_not_found code=404 model=%s", model)
                 return None
             r.raise_for_status()
             data = r.json()
@@ -195,7 +199,9 @@ class RicoOpenAIAgent:
                 "model": model,
             }
         except Exception as exc:
-            logger.warning(f"hf_fallback_failed error={exc}")
+            # Common errors are already handled above (429, 503, 404).
+            # Log unexpected errors at debug to keep production logs clean.
+            logger.debug("hf_fallback_failed error=%s model=%s", exc, model)
             return None
 
     def _fallback_response(self) -> Dict[str, Any]:
