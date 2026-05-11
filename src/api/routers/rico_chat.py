@@ -171,7 +171,9 @@ def rico_openai_smoke(request: Request) -> Dict[str, Any]:
 
 @router.post("/upload-cv")
 @limiter.limit(LIMIT_UPLOAD)
-async def rico_upload_cv(request: Request, user_id: str, file: UploadFile = File(...)) -> Dict[str, Any]:
+async def rico_upload_cv(request: Request, file: UploadFile = File(...)) -> Dict[str, Any]:
+    user = get_current_user(request)   # raises 401 if unauthenticated
+    user_id: str = user["email"]       # trust the JWT, never the request body or query params
     data = await file.read()
     if len(data) > _MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File exceeds 10 MB limit")
