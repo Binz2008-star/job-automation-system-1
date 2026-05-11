@@ -29,6 +29,7 @@ from src.models.onboarding import ONBOARDING_IN_PROGRESS
 CV_FILE_RE = re.compile(r"\b[\w .()_-]+\.(?:pdf|docx?|txt)\b", re.IGNORECASE)
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 PHONE_RE = re.compile(r"(?:\+?\d[\d\s().-]{7,}\d)")
+BARE_ROLE_RE = re.compile(r"^[A-Za-z][A-Za-z\s/&+-]{2,80}$")
 
 
 class RicoChatAPI:
@@ -54,6 +55,49 @@ class RicoChatAPI:
             "profile_exists": True,
             **{k: v for k, v in raw.items() if v not in (None, "", [], {})},
         }
+
+    @staticmethod
+    def _profile_value(profile: Any, key: str, default: Any = None) -> Any:
+        if profile is None:
+            return default
+        if isinstance(profile, dict):
+            return profile.get(key, default)
+        return getattr(profile, key, default)
+
+    @staticmethod
+    def _has_cv_profile(profile: Any) -> bool:
+        if profile is None:
+            return False
+        return bool(
+            RicoChatAPI._profile_value(profile, "cv_filename")
+            or RicoChatAPI._profile_value(profile, "cv_status")
+            or RicoChatAPI._profile_value(profile, "skills")
+            or RicoChatAPI._profile_value(profile, "years_experience")
+        )
+
+    @staticmethod
+    def _looks_like_bare_target_role(message: str) -> bool:
+        text = (message or "").strip()
+        if not text or len(text.split()) > 6:
+            return False
+        lowered = text.lower()
+        if lowered in RicoChatAPI._WHATS_NEXT_PHRASES:
+            return False
+        if any(ch.isdigit() for ch in text):
+            return False
+        return bool(BARE_ROLE_RE.match(text))
+
+    @staticmethod
+    def _as_list(value: Any) -> List[Any]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, tuple):
+            return list(value)
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
+        return []
 
     def _get_openai_agent(self) -> RicoOpenAIAgent:
         agent = getattr(self, "openai_agent", None)
@@ -163,8 +207,8 @@ class RicoChatAPI:
                 ("phone", "phone number"),
                 ("preferred_city", "preferred UAE city"),
                 ("target_roles", "target role"),
-                ("salary_expectation", "salary expectation"),
-                ("avoid", "roles or companies to avoid"),
+                ("salary_expectation_aed", "salary expectation"),
+                ("deal_breakers", "roles or companies to avoid"),
             ]
             if not getattr(profile, key, None) and not (isinstance(profile, dict) and profile.get(key))
         ]
@@ -203,6 +247,54 @@ class RicoChatAPI:
             {"action": "track_applications", "label": "Track my applications"},
         ],
     }
+
+    def _target_role_search_response(self, user_id: str, role: str, profile: Any) -> Dict[str, Any]:
+        target_roles = self._as_list(self._profile_value(profile, "target_roles"))
+        if role and role.lower() not in {str(item).lower() for item in target_roles}:
+            target_roles.append(role)
+            profile = upsert_profile(user_id=user_id, updates={"target_roles": target_roles})
+
+        workflow_result = self.system.run_for_profile(profile)
+        top_matches = workflow_result.get("matches", [])[:5]
+        formatted = [
+            {
+                "title": m.get("title"),
+                "company": m.get("company"),
+                "location": m.get("location"),
+                "score": m.get("rico_score"),
+                "why": m.get("rico_explanation"),
+                "actions": ["Apply", "Save", "Skip", "Why this?", "Draft", "Remind me"],
+            }
+            for m in top_matches
+        ]
+
+        skills = self._as_list(self._profile_value(profile, "skills"))[:8]
+        years = self._profile_value(profile, "years_experience")
+        cities = self._as_list(self._profile_value(profile, "preferred_cities"))
+        city_text = f" in {', '.join(map(str, cities[:2]))}" if cities else " in the UAE"
+        basis = []
+        if years:
+            basis.append(f"~{years} years experience")
+        if skills:
+            basis.append("skills: " + ", ".join(map(str, skills[:6])))
+        basis_text = " using your CV profile" + (f" ({'; '.join(basis)})" if basis else "")
+
+        message = (
+            f"Got it — I will target {role} roles{city_text}{basis_text}. "
+            f"I found {len(top_matches)} current strong matches."
+            if top_matches
+            else f"Got it — I will target {role} roles{city_text}{basis_text}. I did not find strong matches yet, so I will keep scanning and use this profile for future matches."
+        )
+
+        response = {
+            "type": "job_matches",
+            "intent": "search_jobs",
+            "message": message,
+            "matches": formatted,
+            "entities": {"job_title": role, "from_cv_profile": True},
+        }
+        self.memory.append_chat_message(user_id, "assistant", json.dumps(response))
+        return response
 
     def process_message(self, user_id: str, message: str) -> Dict[str, Any]:
         self.memory.append_chat_message(user_id, "user", message)
@@ -271,6 +363,13 @@ class RicoChatAPI:
         if self._looks_like_cv_upload(message):
             return self._finalize(
                 self._cv_first_profile_response(user_id, message),
+                self.SOURCE_KEYWORD,
+                profile=profile,
+            )
+
+        if self._has_cv_profile(profile) and self._looks_like_bare_target_role(message):
+            return self._finalize(
+                self._target_role_search_response(user_id, message.strip(), profile),
                 self.SOURCE_KEYWORD,
                 profile=profile,
             )
