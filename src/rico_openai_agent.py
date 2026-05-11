@@ -153,8 +153,9 @@ class RicoOpenAIAgent:
             return None
 
         # Use an ungated, widely-available free-tier model.
-        # Zephyr-7b-beta and gemma-2b-it are gated; Mistral-7B-Instruct is open.
-        model = os.getenv("RICO_HF_MODEL", "mistralai/Mistral-7B-Instruct-v0.2")
+        # Zephyr-7b-beta, gemma-2b-it, and Mistral-7B-Instruct are gated.
+        # microsoft/DialoGPT-medium is truly open and ungated.
+        model = os.getenv("RICO_HF_MODEL", "microsoft/DialoGPT-medium")
         url = f"https://api-inference.huggingface.co/models/{model}"
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
