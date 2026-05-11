@@ -95,7 +95,7 @@ export default function JobsPage() {
           <h1 className="font-['Cabinet_Grotesk',sans-serif] font-900 text-[22px] tracking-tight">
             Job Matches
           </h1>
-          <p className="text-[13px] text-white/35 mt-0.5">
+          <p className="text-[13px] text-[#5a5a7a] mt-0.5">
             {loading ? "Loading…" : `${jobs.length} roles matched your profile today`}
           </p>
         </div>
@@ -107,7 +107,7 @@ export default function JobsPage() {
               onClick={() => setFilter(f)}
               className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${filter === f
                 ? "bg-[rgba(91,79,255,0.15)] text-[#a78bfa] border border-[rgba(91,79,255,0.25)]"
-                : "text-white/35 hover:text-white/60 hover:bg-white/5"
+                : "text-[#5a5a7a] hover:text-[#eeeef5] hover:bg-[rgba(255,255,255,0.04)]"
                 }`}
             >
               {f === "all" ? "All" : f === "high" ? "85%+ match" : "65–84%"}
@@ -120,7 +120,7 @@ export default function JobsPage() {
         {loading ? (
           <div className="grid grid-cols-2 gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-52 rounded-2xl bg-white/3 animate-pulse border border-white/5" />
+              <div key={i} className="h-52 rounded-2xl bg-[#13132a]/60 animate-pulse border border-[rgba(255,255,255,0.06)]" />
             ))}
           </div>
         ) : error ? (
@@ -144,7 +144,7 @@ function ErrorState({ type, onRetry }: { type: "auth" | "other"; onRetry: () => 
   return (
     <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
       <span className="text-5xl opacity-25">{type === "auth" ? "🔒" : "⚠️"}</span>
-      <h2 className="font-['Cabinet_Grotesk',sans-serif] font-700 text-[18px] text-white/30">
+      <h2 className="font-['Cabinet_Grotesk',sans-serif] font-700 text-[18px] text-[#5a5a7a]">
         {type === "auth" ? "Session expired" : "Could not load jobs"}
       </h2>
       {type === "auth" ? (
@@ -170,10 +170,10 @@ function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
       <span className="text-5xl opacity-25">🔍</span>
-      <h2 className="font-['Cabinet_Grotesk',sans-serif] font-700 text-[18px] text-white/30">
+      <h2 className="font-['Cabinet_Grotesk',sans-serif] font-700 text-[18px] text-[#5a5a7a]">
         No matches in this range
       </h2>
-      <p className="text-[13px] text-white/20 max-w-xs">
+      <p className="text-[13px] text-[#5a5a7a] max-w-xs">
         Try &quot;All&quot; filter, or Rico will surface more matches in the next scan
       </p>
     </div>

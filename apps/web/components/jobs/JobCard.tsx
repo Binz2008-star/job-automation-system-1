@@ -75,10 +75,10 @@ export function JobCard({ job, onAction, isSubmitting, className }: JobCardProps
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="font-['Cabinet_Grotesk',sans-serif] font-700 text-[15px] leading-snug tracking-tight truncate text-white">
+          <p className="font-['Cabinet_Grotesk',sans-serif] font-700 text-[15px] leading-snug tracking-tight truncate text-[#eeeef5]">
             {title}
           </p>
-          <p className="text-[13px] text-white/50 mt-0.5">
+          <p className="text-[13px] text-[#8080a0] mt-0.5">
             {company} · {location}
           </p>
         </div>
@@ -88,7 +88,7 @@ export function JobCard({ job, onAction, isSubmitting, className }: JobCardProps
 
       {/* reason */}
       {reason && (
-        <p className="mt-3 text-[12px] text-white/40 leading-relaxed bg-black/20 rounded-lg px-3 py-2 border border-white/4">
+        <p className="mt-3 text-[12px] text-[#5a5a7a] leading-relaxed bg-[rgba(255,255,255,0.025)] rounded-lg px-3 py-2 border border-[rgba(255,255,255,0.04)]">
           {reason}
         </p>
       )}
@@ -103,7 +103,7 @@ export function JobCard({ job, onAction, isSubmitting, className }: JobCardProps
         {tags.map((tag) => (
           <span
             key={tag}
-            className="text-[11px] px-2.5 py-1 rounded-md bg-white/4 text-white/40 border border-white/6"
+            className="text-[11px] px-2.5 py-1 rounded-md bg-[rgba(255,255,255,0.04)] text-[#5a5a7a] border border-[rgba(255,255,255,0.06)]"
           >
             {tag}
           </span>
@@ -140,7 +140,7 @@ export function JobCard({ job, onAction, isSubmitting, className }: JobCardProps
           </Button>
         </div>
       ) : (
-        <p className="mt-4 pt-3 border-t border-white/6 text-[11px] text-white/30 uppercase tracking-widest font-bold">
+        <p className="mt-4 pt-3 border-t border-[rgba(255,255,255,0.06)] text-[11px] text-[#5a5a7a] uppercase tracking-widest font-bold">
           Action Completed
         </p>
       )}
