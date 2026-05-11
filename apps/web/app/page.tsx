@@ -279,7 +279,7 @@ export default function HomePage() {
                         <span className="text-[10px] text-[#00c9a7] font-['JetBrains_Mono',monospace]">High-quality</span>
                         <span className="text-[13px] font-bold text-[#00c9a7] font-['JetBrains_Mono',monospace]">3</span>
                       </div>
-                      <div className="text-[9px] text-[#5a5a7a] font-['JetBrains_Mono',monospace]">Score threshold ≥ 65</div>
+                      <div className="text-[9px] text-[#5a5a7a] font-['JetBrains_Mono',monospace]">Score threshold ≥ 45</div>
                     </div>
                     <div className="bg-[rgba(91,79,255,0.05)] border border-[rgba(91,79,255,0.15)] rounded p-2.5">
                       <div className="flex justify-between items-center mb-1">
@@ -301,7 +301,7 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-center gap-8 md:gap-16">
           {[
             { label: "Jobs scored per run", value: "LLM + Keywords" },
-            { label: "Sources", value: "Indeed · Bayt" },
+            { label: "Sources", value: "Indeed" },
             { label: "Agent decides", value: "Apply · Watch · Skip" },
             { label: "Applications tracked", value: "Full history" },
             { label: "Alerts via", value: "Telegram" },
@@ -393,7 +393,7 @@ export default function HomePage() {
                 { label: "Pipeline runs", value: "2× daily", color: "#5b4fff" },
                 { label: "Match threshold", value: "≥ 45", color: "#00c9a7" },
                 { label: "Apply cap", value: "Top 4", color: "#a78bfa" },
-                { label: "Sources", value: "Indeed · Bayt", color: "#f5a623" },
+                { label: "Sources", value: "Indeed", color: "#f5a623" },
                 { label: "Scoring", value: "LLM + Keywords", color: "#5a5a7a" },
                 { label: "Agent decisions", value: "Apply · Watch · Skip", color: "#00c9a7" },
                 { label: "Alerts", value: "Telegram", color: "#5b4fff" },
