@@ -119,15 +119,89 @@ class RicoDB:
             sent_at TIMESTAMPTZ
         );
 
+        CREATE TABLE IF NOT EXISTS rico_webhook_events (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            provider TEXT NOT NULL DEFAULT 'jotform',
+            form_id TEXT,
+            submission_id TEXT NOT NULL,
+            user_id UUID REFERENCES rico_users(id) ON DELETE SET NULL,
+            external_user_id TEXT,
+            status TEXT NOT NULL DEFAULT 'processing',
+            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            processed_at TIMESTAMPTZ,
+            UNIQUE(provider, submission_id)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_rico_users_email ON rico_users(email);
         CREATE INDEX IF NOT EXISTS idx_rico_users_telegram ON rico_users(telegram_username);
         CREATE INDEX IF NOT EXISTS idx_rico_chat_user_created ON rico_chat_history(user_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_rico_signals_user_created ON rico_learning_signals(user_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_rico_recommendations_user_status ON rico_job_recommendations(user_id, status);
+        CREATE INDEX IF NOT EXISTS idx_rico_webhook_events_submission ON rico_webhook_events(provider, submission_id);
+        CREATE INDEX IF NOT EXISTS idx_rico_webhook_events_user ON rico_webhook_events(user_id);
         """
         with self.connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(ddl)
+            conn.commit()
+
+    def register_webhook_event(
+        self,
+        *,
+        provider: str,
+        submission_id: str,
+        form_id: Optional[str] = None,
+        external_user_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Atomically register a webhook delivery.
+
+        Returns True only for the first delivery of a provider/submission_id pair.
+        Returns False for duplicates. This is safe against concurrent retries
+        because PostgreSQL enforces the unique constraint.
+        """
+        if not submission_id or submission_id == "?":
+            return True
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO rico_webhook_events (provider, form_id, submission_id, external_user_id, metadata)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (provider, submission_id) DO NOTHING
+                    RETURNING id
+                    """,
+                    (provider, form_id, submission_id, external_user_id, Json(metadata or {})),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        return row is not None
+
+    def mark_webhook_event_processed(
+        self,
+        *,
+        provider: str,
+        submission_id: str,
+        user_id: Optional[str] = None,
+        status: str = "processed",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not submission_id or submission_id == "?":
+            return
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE rico_webhook_events
+                    SET user_id = COALESCE(%s, user_id),
+                        status = %s,
+                        metadata = rico_webhook_events.metadata || %s,
+                        processed_at = now()
+                    WHERE provider = %s AND submission_id = %s
+                    """,
+                    (user_id, status, Json(metadata or {}), provider, submission_id),
+                )
             conn.commit()
 
     def upsert_user(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -258,10 +332,6 @@ class RicoDB:
                     )
             conn.commit()
 
-    # ------------------------------------------------------------------
-    # User-scoped recommendation / application queries
-    # ------------------------------------------------------------------
-
     def get_recommendations(
         self,
         user_id: str,
@@ -269,7 +339,6 @@ class RicoDB:
         limit: int = 200,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        """Return user-scoped job recommendations from rico_job_recommendations."""
         filters = ["user_id = %s"]
         params: List[Any] = [user_id]
         if status:
@@ -313,7 +382,6 @@ class RicoDB:
         status: str,
         notes: Optional[str] = None,
     ) -> bool:
-        """Update status of a user's recommendation. Returns True if row found."""
         with self.connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -329,7 +397,6 @@ class RicoDB:
         return affected > 0
 
     def get_recommendation_stats(self, user_id: str) -> Dict[str, Any]:
-        """Aggregate counts per status for a single user."""
         with self.connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(

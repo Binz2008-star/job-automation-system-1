@@ -2,46 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from src.rico_db import RicoDB
 
 logger = logging.getLogger(__name__)
-
-_SEEN_SUBMISSIONS_FILE = (
-    Path(__file__).resolve().parent.parent / "data" / "rico" / "_seen_submissions.json"
-)
-
-
-def _load_seen_submissions() -> set:
-    try:
-        if _SEEN_SUBMISSIONS_FILE.exists():
-            return set(json.loads(_SEEN_SUBMISSIONS_FILE.read_text(encoding="utf-8")))
-    except Exception:
-        pass
-    return set()
-
-
-def _mark_submission_seen(submission_id: str) -> None:
-    if not submission_id or submission_id == "?":
-        return
-    seen = _load_seen_submissions()
-    seen.add(submission_id)
-    _SEEN_SUBMISSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _SEEN_SUBMISSIONS_FILE.write_text(
-        json.dumps(sorted(seen)[-10_000:], ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
-def _is_duplicate_submission(submission_id: str) -> bool:
-    if not submission_id or submission_id == "?":
-        return False
-    return submission_id in _load_seen_submissions()
 
 
 def _is_production() -> bool:
@@ -54,18 +21,10 @@ def _is_production() -> bool:
 
 
 def _validate_webhook_secret() -> bool:
-    """Validate that JOTFORM_WEBHOOK_SECRET is set in production.
-
-    Returns:
-        bool: True if secret is valid, False otherwise.
-        In production, fails closed (returns False) when secret is missing.
-        In development, allows missing secret (returns True).
-    """
+    """Validate that JOTFORM_WEBHOOK_SECRET is set in production."""
     if not _is_production():
-        # Development mode: allow missing webhook secret
         return True
 
-    # Production mode: require webhook secret
     webhook_secret = os.getenv("JOTFORM_WEBHOOK_SECRET")
     if not webhook_secret:
         logger.warning("jotform_webhook: production mode missing JOTFORM_WEBHOOK_SECRET")
@@ -75,13 +34,7 @@ def _validate_webhook_secret() -> bool:
 
 
 def _active_form_ids() -> frozenset:
-    """Return accepted Jotform form IDs from JOTFORM_FORM_ID env var.
-
-    Supports comma-separated values for multi-form setups.
-    Returns an empty frozenset when the var is unset — disables validation (dev only).
-    In production (RICO_ENV=production) an empty frozenset causes fail-closed behaviour
-    handled by handle_jotform_submission.
-    """
+    """Return accepted Jotform form IDs from JOTFORM_FORM_ID env var."""
     raw = os.getenv("JOTFORM_FORM_ID", "").strip()
     if not raw:
         return frozenset()
@@ -89,10 +42,7 @@ def _active_form_ids() -> frozenset:
 
 
 def _resolve_user_id(answers: Dict[str, Any]) -> Optional[str]:
-    """Derive a stable, unique user_id. Email preferred; telegram_username is fallback.
-
-    full_name is intentionally excluded — it is not unique and cannot be a user_id.
-    """
+    """Derive a stable, unique user_id. Email preferred; telegram_username is fallback."""
     return answers.get("email") or answers.get("telegram_username") or None
 
 
@@ -127,7 +77,7 @@ def map_jotform_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "cv_file_url": answers.get("cv_upload"),
         "consent": bool(answers.get("consent")),
         "form_id": payload.get("formID") or payload.get("form_id") or payload.get("formId"),
-        "submission_id": payload.get("submissionID") or payload.get("submission_id", "?"),
+        "submission_id": payload.get("submissionID") or payload.get("submission_id"),
     }
 
 
@@ -135,9 +85,14 @@ def handle_jotform_submission(payload: Dict[str, Any]) -> Dict[str, Any]:
     form_id = (
         payload.get("formID") or payload.get("form_id") or payload.get("formId")
     )
-    submission_id = payload.get("submissionID") or payload.get("submission_id", "?")
+    submission_id = payload.get("submissionID") or payload.get("submission_id")
 
-    # ── Webhook secret validation (security — fail closed in production) ─────
+    if not submission_id:
+        logger.warning(
+            "jotform_webhook: rejected missing submission_id form_id=%s", form_id
+        )
+        return {"status": "rejected", "reason": "missing_submission_id"}
+
     if not _validate_webhook_secret():
         logger.warning(
             "jotform_webhook: rejected missing webhook secret in production form_id=%s submission=%s",
@@ -145,14 +100,6 @@ def handle_jotform_submission(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
         return {"status": "rejected", "reason": "missing_webhook_secret"}
 
-    # ── Idempotency — reject replayed submissions ────────────────────────────
-    if _is_duplicate_submission(submission_id):
-        logger.info(
-            "jotform_webhook: duplicate submission_id=%s — skipping", submission_id
-        )
-        return {"status": "accepted", "message": "Duplicate submission ignored"}
-
-    # ── Form ID validation ─────────────────────────────────────────────────────
     active_ids = _active_form_ids()
     if not active_ids and _is_production():
         logger.error(
@@ -170,11 +117,37 @@ def handle_jotform_submission(payload: Dict[str, Any]) -> Dict[str, Any]:
     mapped = map_jotform_payload(payload)
     user_id = mapped["user"].get("external_user_id")
 
-    # No stable user_id — cannot create a meaningful DB record.
+    db = RicoDB()
+    try:
+        first_delivery = db.register_webhook_event(
+            provider="jotform",
+            submission_id=submission_id,
+            form_id=form_id,
+            external_user_id=user_id,
+            metadata={"form_id": form_id},
+        )
+    except Exception:
+        logger.exception(
+            "jotform_webhook: idempotency registration failed form_id=%s submission=%s",
+            form_id, submission_id,
+        )
+        return {"status": "error", "reason": "idempotency_unavailable"}
+
+    if not first_delivery:
+        logger.info(
+            "jotform_webhook: duplicate submission_id=%s — skipping", submission_id
+        )
+        return {"status": "ignored", "reason": "duplicate"}
+
     if not user_id:
         logger.info(
             "jotform_webhook: no stable user_id in submission=%s — skipping DB write",
             submission_id,
+        )
+        db.mark_webhook_event_processed(
+            provider="jotform",
+            submission_id=submission_id,
+            status="ignored_missing_user",
         )
         return {"status": "accepted", "message": "No identifiable user field provided"}
 
@@ -183,9 +156,7 @@ def handle_jotform_submission(payload: Dict[str, Any]) -> Dict[str, Any]:
         mapped.get("form_id"), mapped.get("submission_id"), user_id, mapped.get("consent"),
     )
 
-    # ── DB writes — profile/settings failures are isolated ────────────────────
-    db = RicoDB()
-    user = db.upsert_user(mapped["user"])   # raises on failure — caught by chat_service
+    user = db.upsert_user(mapped["user"])
     db_user_id = str(user["id"])
 
     try:
@@ -202,7 +173,6 @@ def handle_jotform_submission(payload: Dict[str, Any]) -> Dict[str, Any]:
             "jotform_webhook: upsert_settings failed db_user_id=%s: %s", db_user_id, exc
         )
 
-    # ── Consent → mark onboarding complete ────────────────────────────────────
     if mapped.get("consent"):
         try:
             from src.repositories.onboarding_repo import mark_onboarding_complete
@@ -216,7 +186,13 @@ def handle_jotform_submission(payload: Dict[str, Any]) -> Dict[str, Any]:
                 user_id, exc,
             )
 
-    _mark_submission_seen(submission_id)
+    db.mark_webhook_event_processed(
+        provider="jotform",
+        submission_id=submission_id,
+        user_id=db_user_id,
+        status="processed",
+        metadata={"external_user_id": user_id},
+    )
     logger.info(
         "jotform_webhook: ok form_id=%s submission=%s db_user_id=%s",
         mapped.get("form_id"), mapped.get("submission_id"), db_user_id,
