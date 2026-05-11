@@ -152,9 +152,9 @@ class RicoOpenAIAgent:
         if not token:
             return None
 
-        # Use a small, widely-available free-tier model.
-        # Zephyr-7b-beta is often gated/removed; gemma-2b-it is more stable on the free API.
-        model = os.getenv("RICO_HF_MODEL", "google/gemma-2b-it")
+        # Use an ungated, widely-available free-tier model.
+        # Zephyr-7b-beta and gemma-2b-it are gated; Mistral-7B-Instruct is open.
+        model = os.getenv("RICO_HF_MODEL", "mistralai/Mistral-7B-Instruct-v0.2")
         url = f"https://api-inference.huggingface.co/models/{model}"
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
