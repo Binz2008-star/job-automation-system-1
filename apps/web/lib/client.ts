@@ -26,7 +26,16 @@ const PATH_MAP: Record<string, string> = {
 };
 
 function resolve(path: string): string {
-  return PATH_MAP[path] ?? path;
+  // Exact match first (handles no-subpath routes like /api/settings)
+  if (PATH_MAP[path]) return PATH_MAP[path];
+  // Prefix match: find the longest registered prefix that matches
+  const sorted = Object.keys(PATH_MAP).sort((a, b) => b.length - a.length);
+  for (const prefix of sorted) {
+    if (path === prefix || path.startsWith(`${prefix}/`)) {
+      return PATH_MAP[prefix] + path.slice(prefix.length);
+    }
+  }
+  return path;
 }
 
 function buildUrl(path: string, params?: Record<string, unknown>): string {

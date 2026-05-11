@@ -40,8 +40,18 @@ export default function JobsPage() {
 
   const handleAction = async (jobId: string, action: string) => {
     if (!user) return;
+    const job = jobs.find((j) => j.job_id === jobId);
+    if (!job) return;
     if (action === "apply") {
-      await applyJob(jobId, { job: {} });
+      await applyJob(jobId, {
+        job: {
+          link: job.apply_url,
+          title: job.title,
+          company: job.company,
+          location: job.location,
+          score: job.score,
+        },
+      });
       toast("Application submitted ✓", "success");
     } else {
       toast("Action recorded", "success");
