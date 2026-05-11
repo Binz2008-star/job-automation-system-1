@@ -67,7 +67,30 @@ export async function getJobs(
   const { data } = await api.get<JobListResponse>("/api/jobs", {
     params: { page, limit, min_score: minScore, source },
   });
-  return data;
+  // Backend returns raw dicts — normalize to frontend Job shape with safe defaults
+  const rawJobs = Array.isArray(data?.jobs) ? (data.jobs as unknown[]) : [];
+  const jobs: Job[] = rawJobs.map((j) => {
+    const item = j as Record<string, any>;
+    return {
+      job_id: (item.job_id ?? item.id ?? item._id ?? "") as string,
+      title: (item.title ?? "Untitled role") as string,
+      company: (item.company ?? "Unknown company") as string,
+      location: (item.location ?? "Remote / unspecified") as string,
+      salary_range: (item.salary_range ?? item.salary ?? "") as string,
+      score: typeof item.score === "number" ? item.score : 0,
+      reason: (item.reason ?? item.match_reason ?? "") as string,
+      tags: Array.isArray(item.tags) ? (item.tags as string[]) : [],
+      posted_at: (item.posted_at ?? item.date_found ?? "") as string,
+      apply_url: (item.apply_url ?? item.link ?? "") as string,
+    };
+  });
+  return {
+    jobs,
+    total: typeof data.total === "number" ? data.total : jobs.length,
+    page: typeof data.page === "number" ? data.page : page,
+    limit: typeof data.limit === "number" ? data.limit : limit,
+    pages: typeof data.pages === "number" ? data.pages : 1,
+  };
 }
 
 // ── GET /api/v1/jobs/{job_id} ──────────────────────────────────────────────────

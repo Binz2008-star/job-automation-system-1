@@ -51,7 +51,12 @@ export function JobCard({ job, onAction, className }: JobCardProps) {
     }
   };
 
-  const salary = job.salary_range ?? job.salary;
+  const title = job.title ?? "Untitled role";
+  const company = job.company ?? "Unknown company";
+  const location = job.location ?? "Remote / unspecified";
+  const reason = job.reason ?? "";
+  const salary = job.salary_range ?? job.salary ?? "";
+  const tags = Array.isArray(job.tags) ? job.tags : [];
 
   return (
     <div
@@ -68,18 +73,18 @@ export function JobCard({ job, onAction, className }: JobCardProps) {
           className={cn(
             "w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center",
             "bg-gradient-to-br font-['Cabinet_Grotesk',sans-serif] font-black text-xs",
-            pickColor(job.company)
+            pickColor(company)
           )}
         >
-          {initials(job.company)}
+          {initials(company)}
         </div>
 
         <div className="flex-1 min-w-0">
           <p className="font-['Cabinet_Grotesk',sans-serif] font-700 text-[15px] leading-snug tracking-tight truncate text-white">
-            {job.title}
+            {title}
           </p>
           <p className="text-[13px] text-white/50 mt-0.5">
-            {job.company} · {job.location}
+            {company} · {location}
           </p>
         </div>
 
@@ -87,9 +92,11 @@ export function JobCard({ job, onAction, className }: JobCardProps) {
       </div>
 
       {/* reason */}
-      <p className="mt-3 text-[12px] text-white/40 leading-relaxed bg-black/20 rounded-lg px-3 py-2 border border-white/4">
-        {job.reason}
-      </p>
+      {reason && (
+        <p className="mt-3 text-[12px] text-white/40 leading-relaxed bg-black/20 rounded-lg px-3 py-2 border border-white/4">
+          {reason}
+        </p>
+      )}
 
       {/* tags + salary */}
       <div className="flex gap-1.5 mt-3 flex-wrap items-center">
@@ -98,7 +105,7 @@ export function JobCard({ job, onAction, className }: JobCardProps) {
             {salary}
           </span>
         )}
-        {job.tags.map((tag) => (
+        {tags.map((tag) => (
           <span
             key={tag}
             className="text-[11px] px-2.5 py-1 rounded-md bg-white/4 text-white/40 border border-white/6"

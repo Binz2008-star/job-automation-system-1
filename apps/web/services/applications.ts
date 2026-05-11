@@ -3,6 +3,7 @@ import type {
   Application,
   ApplicationActionRequest,
   ApplicationActionResponse,
+  ApplicationStatus,
   ApplicationsResponse,
 } from "@/types";
 
@@ -69,7 +70,31 @@ export async function getApplications(
   const { data } = await api.get<ApplicationsResponse>("/api/applications", {
     params: { status, page, limit },
   });
-  return data;
+  // Backend returns raw dicts — normalize to frontend Application shape
+  const rawApps = Array.isArray(data?.applications) ? (data.applications as unknown[]) : [];
+  const applications: Application[] = rawApps.map((a) => {
+    const item = a as Record<string, any>;
+    const jobId = (item.job_id ?? item.id ?? "") as string;
+    return {
+      application_id: jobId,
+      job_id: jobId,
+      title: (item.title ?? "Untitled role") as string,
+      company: (item.company ?? "Unknown company") as string,
+      location: (item.location ?? "Remote / unspecified") as string,
+      status: (item.status ?? "applied") as ApplicationStatus,
+      applied_at: (item.applied_at ?? item.date_applied ?? "") as string,
+      updated_at: (item.updated_at ?? item.date_updated ?? "") as string,
+      notes: (item.notes ?? "") as string,
+      apply_url: (item.apply_url ?? item.link ?? "") as string,
+    };
+  });
+  return {
+    applications,
+    total: typeof data.total === "number" ? data.total : applications.length,
+    page: typeof data.page === "number" ? data.page : page,
+    limit: typeof data.limit === "number" ? data.limit : limit,
+    pages: typeof data.pages === "number" ? data.pages : 1,
+  };
 }
 
 // ── PATCH /api/v1/applications/{job_id} ──────────────────────────────────────
