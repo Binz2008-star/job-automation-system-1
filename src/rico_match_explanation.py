@@ -16,6 +16,10 @@ from typing import Any, Dict, List
 def build_match_explanation(job: Dict[str, Any], profile: Dict[str, Any]) -> Dict[str, Any]:
     """Generate structured match explanation using rule-based logic.
 
+    IMPORTANT: Confidence represents Rico's confidence in the recommendation quality
+    (how well this job fits the user's profile), NOT the user's chance of getting hired.
+    High confidence means "this appears to be a worthwhile opportunity," not "you will get the job."
+
     Args:
         job: Job dictionary with title, company, location, description, salary, etc.
         profile: User profile dictionary with target_roles, preferred_cities,
@@ -27,7 +31,7 @@ def build_match_explanation(job: Dict[str, Any], profile: Dict[str, Any]) -> Dic
         - match_concerns: List of concerns or risks
         - missing_facts: List of missing information from the job posting
         - recommended_action: What the user should do next
-        - confidence: "high" | "medium" | "low"
+        - confidence: "high" | "medium" | "low" (tiered, not percentage-based)
     """
     match_reasons: List[str] = []
     match_concerns: List[str] = []
@@ -108,25 +112,37 @@ def build_match_explanation(job: Dict[str, Any], profile: Dict[str, Any]) -> Dic
         elif "junior" in job_title and years_experience > 5:
             match_concerns.append("Junior role may be below your experience level")
 
-    # Calculate confidence
+    # Calculate confidence (tiered rule system)
+    # High confidence: strong fit + low uncertainty
+    # Medium confidence: moderate fit, some uncertainty
+    # Low confidence: weak fit or major concerns
     reason_count = len(match_reasons)
     concern_count = len(match_concerns)
     missing_count = len(missing_facts)
 
-    if reason_count >= 3 and concern_count <= 1:
+    # Low confidence triggers on major mismatches
+    has_major_mismatch = any(
+        "below your minimum" in c or "may require more experience" in c or "may be below" in c
+        for c in match_concerns
+    )
+
+    if has_major_mismatch or concern_count >= 3 or (reason_count < 2 and concern_count > 0):
+        confidence = "low"
+    elif reason_count >= 3 and concern_count <= 1 and missing_count <= 2:
         confidence = "high"
     elif reason_count >= 2 and concern_count <= 2:
         confidence = "medium"
     else:
         confidence = "low"
 
-    # Determine recommended action
+    # Determine recommended action with Rico's trust tone
+    # Base tone: "This role looks strong for these reasons. These parts are uncertain. Here is the safest next step."
     if confidence == "high" and concern_count == 0:
-        recommended_action = "This is a strong match. Consider applying now or preparing a tailored CV."
+        recommended_action = "This role looks strong for these reasons. Consider applying now or preparing a tailored CV."
     elif confidence == "high" and concern_count > 0:
-        recommended_action = "Save this job and verify the concerns before applying. Let me tailor your CV first."
+        recommended_action = "This role looks strong, but verify the concerns before applying. Let me tailor your CV first."
     elif confidence == "medium":
-        recommended_action = "Save this job and let me tailor your CV before applying. Verify salary and visa if critical."
+        recommended_action = "This role has potential but some uncertainty. Save it and let me tailor your CV before applying."
     else:
         recommended_action = "Review carefully. This may not be the best fit. Consider skipping unless specific criteria match."
 
