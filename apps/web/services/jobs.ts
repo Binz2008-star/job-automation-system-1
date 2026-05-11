@@ -3,7 +3,7 @@ import type {
   Job,
   JobActionRequest,
   JobActionResponse,
-  RecommendedJobsResponse,
+  JobListResponse,
 } from "@/types";
 
 // ── DEV MOCK — only active when NEXT_PUBLIC_USE_MOCK=true ────────────────────
@@ -48,29 +48,79 @@ const MOCK_JOBS: Job[] = [
   },
 ];
 
-// ── GET /api/jobs/recommended?user_id= ───────────────────────────────────────
-export async function getRecommendedJobs(
-  userId: string
-): Promise<RecommendedJobsResponse> {
+// ── GET /api/v1/jobs ───────────────────────────────────────────────────────────
+export async function getJobs(
+  page = 1,
+  limit = 20,
+  minScore = 0,
+  source?: string
+): Promise<JobListResponse> {
   if (USE_MOCK) {
-    return { user_id: userId, count: MOCK_JOBS.length, jobs: MOCK_JOBS };
+    return {
+      jobs: MOCK_JOBS,
+      total: MOCK_JOBS.length,
+      page: 1,
+      limit: 20,
+      pages: 1,
+    };
   }
-  const { data } = await api.get<RecommendedJobsResponse>(
-    "/api/jobs/recommended",
-    { params: { user_id: userId } }
+  const { data } = await api.get<JobListResponse>("/api/jobs", {
+    params: { page, limit, min_score: minScore, source },
+  });
+  return data;
+}
+
+// ── GET /api/v1/jobs/{job_id} ──────────────────────────────────────────────────
+export async function getJobById(jobId: string): Promise<Job> {
+  if (USE_MOCK) {
+    const job = MOCK_JOBS.find((j) => j.job_id === jobId);
+    if (!job) throw new Error("Job not found");
+    return job;
+  }
+  const { data } = await api.get<Job>(`/api/jobs/${jobId}`);
+  return data;
+}
+
+// ── POST /api/v1/jobs/{job_id}/apply ───────────────────────────────────────────
+export async function applyJob(
+  jobId: string,
+  payload: JobActionRequest
+): Promise<JobActionResponse> {
+  if (USE_MOCK) {
+    return { status: "applied", message: "Application submitted", job_id: jobId };
+  }
+  const { data } = await api.post<JobActionResponse>(
+    `/api/jobs/${jobId}/apply`,
+    payload
   );
   return data;
 }
 
-// ── POST /api/jobs/action ─────────────────────────────────────────────────────
-export async function submitJobAction(
+// ── POST /api/v1/jobs/{job_id}/skip ────────────────────────────────────────────
+export async function skipJob(
+  jobId: string,
   payload: JobActionRequest
 ): Promise<JobActionResponse> {
   if (USE_MOCK) {
-    return { success: true, job_id: payload.job_id, action: payload.action };
+    return { status: "skipped", message: "Job skipped", job_id: jobId };
   }
   const { data } = await api.post<JobActionResponse>(
-    "/api/jobs/action",
+    `/api/jobs/${jobId}/skip`,
+    payload
+  );
+  return data;
+}
+
+// ── POST /api/v1/jobs/{job_id}/block ───────────────────────────────────────────
+export async function blockJob(
+  jobId: string,
+  payload: JobActionRequest
+): Promise<JobActionResponse> {
+  if (USE_MOCK) {
+    return { status: "blocked", message: "Company blocked", job_id: jobId };
+  }
+  const { data } = await api.post<JobActionResponse>(
+    `/api/jobs/${jobId}/block`,
     payload
   );
   return data;

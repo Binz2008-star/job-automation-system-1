@@ -1,14 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
 import { ScoreBadge } from "@/components/ui/ScoreBadge";
-import type { Job, JobAction } from "@/types";
+import { cn } from "@/lib/utils";
+import type { Job } from "@/types";
+import { useState } from "react";
 
 interface JobCardProps {
   job: Job;
-  onAction?: (jobId: string, action: JobAction) => Promise<void>;
+  onAction?: (jobId: string, action: string) => Promise<void>;
   className?: string;
 }
 
@@ -37,10 +37,10 @@ function pickColor(name: string) {
 }
 
 export function JobCard({ job, onAction, className }: JobCardProps) {
-  const [loading, setLoading] = useState<JobAction | null>(null);
-  const [done, setDone] = useState<JobAction | null>(null);
+  const [loading, setLoading] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
 
-  const handle = async (action: JobAction) => {
+  const handle = async (action: string) => {
     if (!onAction || loading) return;
     setLoading(action);
     try {

@@ -2,6 +2,7 @@ import api from "@/lib/client";
 import type {
   Application,
   ApplicationActionRequest,
+  ApplicationActionResponse,
   ApplicationsResponse,
 } from "@/types";
 
@@ -50,32 +51,60 @@ const MOCK_APPS: Application[] = [
   },
 ];
 
-// ── GET /api/applications?user_id= ───────────────────────────────────────────
+// ── GET /api/v1/applications ─────────────────────────────────────────────────
 export async function getApplications(
-  userId: string
+  status?: string,
+  page = 1,
+  limit = 50
 ): Promise<ApplicationsResponse> {
   if (USE_MOCK) {
-    return { user_id: userId, count: MOCK_APPS.length, applications: MOCK_APPS };
+    return {
+      applications: MOCK_APPS,
+      total: MOCK_APPS.length,
+      page: 1,
+      limit: 50,
+      pages: 1,
+    };
   }
   const { data } = await api.get<ApplicationsResponse>("/api/applications", {
-    params: { user_id: userId },
+    params: { status, page, limit },
   });
   return data;
 }
 
-// ── POST /api/applications/update ────────────────────────────────────────────
+// ── PATCH /api/v1/applications/{job_id} ──────────────────────────────────────
 export async function updateApplicationStatus(
+  jobId: string,
   payload: ApplicationActionRequest
-): Promise<Application> {
+): Promise<ApplicationActionResponse> {
   if (USE_MOCK) {
-    const app = MOCK_APPS.find(
-      (a) => a.application_id === payload.application_id
-    );
-    return { ...(app ?? MOCK_APPS[0]), status: payload.status };
+    const app = MOCK_APPS.find((a) => a.job_id === jobId);
+    return {
+      status: payload.status,
+      job_id: jobId,
+      message: "Status updated",
+    };
   }
-  const { data } = await api.post<Application>(
-    "/api/applications/update",
+  const { data } = await api.patch<ApplicationActionResponse>(
+    `/api/applications/${jobId}`,
     payload
+  );
+  return data;
+}
+
+// ── GET /api/v1/applications/stats ───────────────────────────────────────────
+export async function getApplicationStats(): Promise<Record<string, number>> {
+  if (USE_MOCK) {
+    return {
+      applied: 2,
+      interview_scheduled: 1,
+      offer_extended: 0,
+      rejected: 1,
+      saved: 0,
+    };
+  }
+  const { data } = await api.get<Record<string, number>>(
+    "/api/applications/stats"
   );
   return data;
 }

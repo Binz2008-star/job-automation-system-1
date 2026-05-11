@@ -30,27 +30,24 @@ export interface Job {
   posted_at?: string;
 }
 
-// GET /api/jobs/recommended?user_id=
-export interface RecommendedJobsResponse {
-  user_id: string;
-  count: number;
+// GET /api/v1/jobs
+export interface JobListResponse {
   jobs: Job[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
 }
 
-export type JobAction = "save" | "ignore" | "apply";
-
-// POST /api/jobs/action
+// POST /api/v1/jobs/{job_id}/apply | /skip | /block
 export interface JobActionRequest {
-  user_id: string;
-  job_id: string;
-  action: JobAction;
+  job: Record<string, unknown>;
 }
 
 export interface JobActionResponse {
-  success: boolean;
-  job_id: string;
-  action: JobAction;
-  message?: string;
+  status: string;
+  message: string;
+  job_id?: string | null;
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
@@ -63,7 +60,7 @@ export interface ChatRequest {
 export interface ChatResponse {
   reply: string;
   jobs?: Job[];
-  actions?: JobAction[];
+  actions?: string[];
 }
 
 /** Client-side only — not sent to API */
@@ -127,19 +124,49 @@ export interface Application {
   apply_url?: string;
 }
 
-// GET /api/applications?user_id=
+// GET /api/v1/applications
 export interface ApplicationsResponse {
-  user_id: string;
-  count: number;
   applications: Application[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
 }
 
-// POST /api/applications/update
+// PATCH /api/v1/applications/{job_id}
 export interface ApplicationActionRequest {
-  user_id: string;
-  application_id: string;
   status: ApplicationStatus;
   notes?: string;
+}
+
+export interface ApplicationActionResponse {
+  status: string;
+  job_id: string;
+  message: string;
+}
+
+// ── Settings ────────────────────────────────────────────────────────────────
+// GET /api/v1/settings
+export interface SettingsResponse {
+  include_keywords: string[];
+  exclude_keywords: string[];
+  min_score: number;
+  max_daily_applies: number;
+  telegram_chat_id: string;
+  score_threshold_apply: number;
+  score_threshold_watch: number;
+  [key: string]: unknown;
+}
+
+// PUT /api/v1/settings
+export interface SettingsUpdateRequest {
+  include_keywords?: string[];
+  exclude_keywords?: string[];
+  min_score?: number;
+  max_daily_applies?: number;
+  telegram_chat_id?: string;
+  score_threshold_apply?: number;
+  score_threshold_watch?: number;
 }
 
 // ── Shared ────────────────────────────────────────────────────────────────────

@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
-import { useToast } from "@/hooks/useToast";
-import { getRecommendedJobs, submitJobAction } from "@/services/jobs";
 import { JobCard } from "@/components/jobs/JobCard";
 import { ToastContainer } from "@/components/ui/Toast";
-import type { Job, JobAction } from "@/types";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/useToast";
+import { applyJob, getJobs } from "@/services/jobs";
+import type { Job } from "@/types";
+import { useEffect, useState } from "react";
 
 type Filter = "all" | "high" | "mid";
 
@@ -19,7 +19,7 @@ export default function JobsPage() {
 
   useEffect(() => {
     if (!user) return;
-    getRecommendedJobs(user.user_id)
+    getJobs()
       .then((r) => setJobs(r.jobs))
       .catch(() => toast("Could not load jobs", "error"))
       .finally(() => setLoading(false));
@@ -29,14 +29,14 @@ export default function JobsPage() {
     filter === "high" ? j.score >= 85 : filter === "mid" ? j.score >= 65 && j.score < 85 : true
   );
 
-  const handleAction = async (jobId: string, action: JobAction) => {
+  const handleAction = async (jobId: string, action: string) => {
     if (!user) return;
-    await submitJobAction({ user_id: user.user_id, job_id: jobId, action });
-    toast(
-      action === "apply" ? "Application submitted ✓" :
-      action === "save" ? "Job saved" : "Job ignored",
-      "success"
-    );
+    if (action === "apply") {
+      await applyJob(jobId, { job: {} });
+      toast("Application submitted ✓", "success");
+    } else {
+      toast("Action recorded", "success");
+    }
   };
 
   return (
@@ -56,11 +56,10 @@ export default function JobsPage() {
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${
-                filter === f
+              className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${filter === f
                   ? "bg-[rgba(91,79,255,0.15)] text-[#a78bfa] border border-[rgba(91,79,255,0.25)]"
                   : "text-white/35 hover:text-white/60 hover:bg-white/5"
-              }`}
+                }`}
             >
               {f === "all" ? "All" : f === "high" ? "85%+ match" : "65–84%"}
             </button>

@@ -9,12 +9,11 @@ const PROXY = "/proxy";
 // Remap generated service paths to actual backend paths.
 const PATH_MAP: Record<string, string> = {
   "/api/applications": "/api/v1/applications",
-  "/api/applications/update": "/api/v1/applications",
-  "/api/jobs/recommended": "/api/v1/jobs/recommended",
-  "/api/jobs/action": "/api/v1/actions/run",
+  "/api/jobs": "/api/v1/jobs",
   "/api/chat": "/api/v1/rico/chat",
   "/api/profile": "/api/v1/rico/profile",
   "/api/upload-cv": "/api/v1/rico/profile/cv",
+  "/api/settings": "/api/v1/settings",
 };
 
 function resolve(path: string): string {
@@ -61,6 +60,17 @@ const client = {
       body: JSON.stringify(data),
     });
     if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status}`);
+    return { data: (await res.json()) as T };
+  },
+
+  async put<T>(path: string, data?: unknown) {
+    const res = await fetch(buildUrl(path), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`PUT ${path} failed: ${res.status}`);
     return { data: (await res.json()) as T };
   },
 };

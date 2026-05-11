@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ToastContainer } from "@/components/ui/Toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/useToast";
 import { getApplications, updateApplicationStatus } from "@/services/applications";
-import { StatusBadge } from "@/components/ui/StatusBadge";
-import { ToastContainer } from "@/components/ui/Toast";
 import type { Application, ApplicationStatus } from "@/types";
+import { useEffect, useState } from "react";
 
 const STATUS_OPTIONS: ApplicationStatus[] = [
   "applied",
@@ -30,7 +30,7 @@ export default function ApplicationsPage() {
 
   useEffect(() => {
     if (!user) return;
-    getApplications(user.user_id)
+    getApplications()
       .then((r) => setApps(r.applications))
       .catch(() => toast("Could not load applications", "error"))
       .finally(() => setLoading(false));
@@ -40,12 +40,8 @@ export default function ApplicationsPage() {
     if (!user || updating) return;
     setUpdating(app.application_id);
     try {
-      const updated = await updateApplicationStatus({
-        user_id: user.user_id,
-        application_id: app.application_id,
-        status,
-      });
-      setApps((prev) => prev.map((a) => (a.application_id === updated.application_id ? updated : a)));
+      await updateApplicationStatus(app.job_id, { status });
+      setApps((prev) => prev.map((a) => (a.job_id === app.job_id ? { ...a, status } : a)));
       toast("Status updated", "success");
     } catch {
       toast("Update failed", "error");
@@ -118,9 +114,8 @@ export default function ApplicationsPage() {
               {apps.map((app, i) => (
                 <div
                   key={app.application_id}
-                  className={`grid grid-cols-[2fr_1.5fr_1fr_1fr_1fr] gap-4 px-5 py-4 items-center transition-colors hover:bg-white/2 ${
-                    i < apps.length - 1 ? "border-b border-white/5" : ""
-                  }`}
+                  className={`grid grid-cols-[2fr_1.5fr_1fr_1fr_1fr] gap-4 px-5 py-4 items-center transition-colors hover:bg-white/2 ${i < apps.length - 1 ? "border-b border-white/5" : ""
+                    }`}
                 >
                   <div className="min-w-0">
                     <p className="text-[13px] font-medium text-white/80 truncate">{app.title}</p>
