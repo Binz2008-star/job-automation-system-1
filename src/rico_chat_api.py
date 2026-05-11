@@ -55,6 +55,13 @@ class RicoChatAPI:
             **{k: v for k, v in raw.items() if v not in (None, "", [], {})},
         }
 
+    def _get_openai_agent(self) -> RicoOpenAIAgent:
+        agent = getattr(self, "openai_agent", None)
+        if agent is None:
+            agent = RicoOpenAIAgent()
+            self.openai_agent = agent
+        return agent
+
     SOURCE_KEYWORD = "keyword"
     SOURCE_OPENAI = "openai"
     SOURCE_HF = "huggingface"
@@ -79,14 +86,15 @@ class RicoChatAPI:
         *,
         profile: Any = None,
     ) -> Dict[str, Any]:
+        agent = self._get_openai_agent()
         return {
             **response,
             "response_source": response.get("response_source", source),
             "provider": response.get("provider", source),
             "provider_state": response.get("provider_state"),
-            "openai_available": self.openai_agent.available,
-            "hf_available": self.openai_agent.hf_available,
-            "openai_model": self.openai_agent.model,
+            "openai_available": agent.available,
+            "hf_available": agent.hf_available,
+            "openai_model": agent.model,
             "profile_context_present": profile is not None,
         }
 
@@ -213,13 +221,15 @@ class RicoChatAPI:
         profile = get_profile(user_id)
         lower = message.lower()
 
+        # ── Always-on fast paths (before router) ──────────────────────────────
+
         if any(phrase in lower for phrase in self._WHATS_NEXT_PHRASES):
             self.memory.append_chat_message(
                 user_id, "assistant", json.dumps(self._JOB_SEARCH_OPTIONS)
             )
             return self._finalize(self._JOB_SEARCH_OPTIONS, self.SOURCE_KEYWORD, profile=profile)
 
-        if any(phrase in lower for phrase in ["skip this question", "skip", "don't know", "do not know"]):
+        if any(phrase in lower for phrase in ["skip this question", "don't know", "do not know"]):
             response = {
                 "type": "profile_skip",
                 "message": (
@@ -245,70 +255,128 @@ class RicoChatAPI:
                 profile=profile,
             )
 
-        if "change salary" in lower or "salary" in lower:
+        # ── Intent router ─────────────────────────────────────────────────────
+
+        context = self._build_router_context(user_id, profile)
+        from src.rico_intent_router import route as _route
+        routed = _route(message, user_id=user_id, context=context)
+
+        # Help / menu
+        if routed.intent == "help":
+            self.memory.append_chat_message(
+                user_id, "assistant", json.dumps(self._JOB_SEARCH_OPTIONS)
+            )
+            return self._finalize(self._JOB_SEARCH_OPTIONS, self.SOURCE_KEYWORD, profile=profile)
+
+        # apply_job: gate on explicit confirmation before touching agent_runtime
+        if routed.intent == "apply_job":
             response = {
-                "type": "preferences",
-                "message": "I updated your salary preferences. I will prioritize stronger salary matches.",
+                "type": "confirmation_required",
+                "intent": "apply_job",
+                "message": routed.confirmation_prompt or (
+                    "To confirm: mark this job as applied and track it. "
+                    "Reply YES to confirm or CANCEL to abort."
+                ),
+                "tool_args": routed.tool_args,
             }
             self.memory.append_chat_message(user_id, "assistant", response["message"])
-            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
+            return self._finalize(response, routed.source, profile=profile)
 
-        if any(keyword in lower for keyword in ["find jobs", "search jobs", "jobs", "recommend"]):
+        # Tool-executable intents: delegate to agent_runtime
+        if routed.tool_name and routed.intent not in {"search_jobs", "update_preferences", "prepare_interview", "unknown"}:
+            job_key = routed.tool_args.get("job_key", "")
+            from src.agent.runtime import agent_runtime
+            result = agent_runtime.handle_action(
+                user_id=user_id,
+                action=routed.intent.replace("_job", "").replace("_message", ""),
+                job_key=job_key,
+                source="chat",
+            )
+            response = {
+                "type": routed.intent,
+                "intent": routed.intent,
+                "message": result.message,
+                "entities": routed.entities,
+                "confidence": routed.confidence,
+            }
+            self.memory.append_chat_message(user_id, "assistant", result.message)
+            return self._finalize(response, routed.source, profile=profile)
+
+        # search_jobs: run workflow with extracted entities
+        if routed.intent == "search_jobs":
             workflow_result = self.system.run_for_profile(profile)
             top_matches = workflow_result.get("matches", [])[:5]
-
-            formatted = []
-            for match in top_matches:
-                formatted.append({
-                    "title": match.get("title"),
-                    "company": match.get("company"),
-                    "location": match.get("location"),
-                    "score": match.get("rico_score"),
-                    "why": match.get("rico_explanation"),
-                    "actions": [
-                        "Apply Now",
-                        "Save",
-                        "Ignore",
-                        "See Details",
-                        "Write Cover Letter",
-                        "Prepare Interview",
-                    ],
-                })
-
+            formatted = [
+                {
+                    "title": m.get("title"),
+                    "company": m.get("company"),
+                    "location": m.get("location"),
+                    "score": m.get("rico_score"),
+                    "why": m.get("rico_explanation"),
+                    "actions": ["Apply", "Save", "Skip", "Why this?", "Draft", "Remind me"],
+                }
+                for m in top_matches
+            ]
             response = {
                 "type": "job_matches",
-                "message": f"I found {len(top_matches)} strong UAE job matches for you.",
+                "intent": "search_jobs",
+                "message": "I found {} strong UAE job matches for you.".format(len(top_matches)),
                 "matches": formatted,
+                "entities": routed.entities,
             }
             self.memory.append_chat_message(user_id, "assistant", json.dumps(response))
-            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
+            return self._finalize(response, routed.source, profile=profile)
 
-        if "apply" in lower:
+        # update_preferences: apply extracted entities to profile
+        if routed.intent == "update_preferences":
+            prefs = routed.tool_args.get("preferences", {})
+            if prefs:
+                upsert_profile(user_id=user_id, updates=prefs)
             response = {
-                "type": "application",
-                "message": (
-                    "I can prepare a tailored application message and cover letter. "
-                    "I will also track the application status for follow-up reminders."
-                ),
+                "type": "preferences_updated",
+                "message": "Got it. I have updated your preferences and will apply them to future searches.",
+                "updated": prefs,
             }
             self.memory.append_chat_message(user_id, "assistant", response["message"])
-            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
+            return self._finalize(response, routed.source, profile=profile)
 
-        if "interview" in lower:
-            response = {
-                "type": "interview_prep",
-                "message": (
-                    "I will generate interview preparation notes, likely questions, "
-                    "company insights, and suggested answers based on the role."
-                ),
-            }
-            self.memory.append_chat_message(user_id, "assistant", response["message"])
-            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
+        # prepare_interview: use HF for richer content
+        if routed.intent == "prepare_interview":
+            user_context = self._build_openai_context(profile)
+            system_prompt = (
+                "You are Rico, a UAE career coach. Give concise, practical interview preparation "
+                "tips including likely questions, company research pointers, and answer frameworks."
+            )
+            from src.rico_hf_client import generate_text, is_available as hf_ok
+            hf_text = None
+            if hf_ok():
+                hf_text = generate_text(message, system=system_prompt, max_new_tokens=400)
+            msg = hf_text or (
+                "I will prepare interview notes, likely questions, and suggested answers based on your target role. "
+                "Share the specific job title or company name for a more tailored response."
+            )
+            response = {"type": "interview_prep", "message": msg}
+            self.memory.append_chat_message(user_id, "assistant", msg)
+            src = self.SOURCE_HF if hf_text else self.SOURCE_FALLBACK
+            return self._finalize(response, src, profile=profile)
 
+        # Fallback: unknown intent — use HF for natural reply or templated fallback
         user_context = self._build_openai_context(profile)
-        response = self.openai_agent.respond(message, user_context=user_context)
-        self.memory.append_chat_message(user_id, "assistant", response.get("message", ""))
-        return self._finalize(response, self._source_for_openai_response(response), profile=profile)
+        ai_response = self._get_openai_agent().respond(message, user_context=user_context)
+        self.memory.append_chat_message(user_id, "assistant", ai_response.get("message", ""))
+        return self._finalize(ai_response, self._source_for_openai_response(ai_response), profile=profile)
+
+    @staticmethod
+    def _build_router_context(user_id: str, profile: Any) -> dict:
+        """Build the context dict passed to the intent router."""
+        ctx: dict = {}
+        if profile:
+            try:
+                from dataclasses import asdict, is_dataclass
+                ctx["profile"] = asdict(profile) if is_dataclass(profile) else dict(profile)
+            except Exception:
+                pass
+        return ctx
 
 
 def demo() -> None:

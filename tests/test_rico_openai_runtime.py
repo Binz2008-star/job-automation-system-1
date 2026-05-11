@@ -33,6 +33,31 @@ os.environ.setdefault("ADMIN_EMAIL", "rico-test@example.com")
 os.environ.setdefault("ADMIN_PASSWORD", "ricopass123")
 os.environ.setdefault("JWT_SECRET", "ricosecret" + "x" * 21)
 
+_AI_ENV_VARS = [
+    "OPENAI_API_KEY",
+    "OPEN_AI_API",
+    "HF_API_TOKEN",
+    "HF_TOKEN",
+    "HF_API_KEY",
+    "HUGGINGFACE_API_KEY",
+    "RICO_AI_PROVIDER",
+]
+
+
+@pytest.fixture(autouse=True)
+def clear_ai_env():
+    saved = {name: os.environ.get(name) for name in _AI_ENV_VARS}
+    for name in _AI_ENV_VARS:
+        os.environ.pop(name, None)
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
 
 # ── Test doubles ──────────────────────────────────────────────────────────────
 
@@ -224,7 +249,8 @@ def test_smoke_endpoint_returns_success_shape_when_helper_succeeds(client):
         "openai_available": True,
         "profile_context_present": False,
     }
-    with patch("src.rico_openai_runtime.call_openai_minimal", return_value=fake_result):
+    with patch("src.rico_env.get_ai_provider", return_value="openai"), \
+         patch("src.rico_openai_runtime.call_openai_minimal", return_value=fake_result):
         r = client.get("/api/v1/rico/openai-smoke")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -254,7 +280,8 @@ def test_smoke_endpoint_returns_failure_shape_when_helper_fails(client):
         },
         "text": "I understood. I can still help while the AI reasoning layer is being configured.",
     }
-    with patch("src.rico_openai_runtime.call_openai_minimal", return_value=fake_result):
+    with patch("src.rico_env.get_ai_provider", return_value="openai"), \
+         patch("src.rico_openai_runtime.call_openai_minimal", return_value=fake_result):
         r = client.get("/api/v1/rico/openai-smoke")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -303,7 +330,8 @@ def test_chat_returns_openai_text_when_helper_succeeds(chat_api, monkeypatch):
         "openai_available": True,
         "profile_context_present": True,
     }
-    with patch("src.rico_openai_agent.call_openai_minimal", return_value=fake_result):
+    with patch.dict(os.environ, {"RICO_AI_PROVIDER": "openai"}), \
+         patch("src.rico_openai_agent.call_openai_minimal", return_value=fake_result):
         result = chat_api._handle_active_user("alice@rico.ai", "tell me about my prospects")
 
     assert result["type"] == "openai_response"
@@ -335,7 +363,8 @@ def test_chat_preserves_fallback_shape_when_helper_fails(chat_api, monkeypatch):
         },
         "text": "I understood. I can still help while the AI reasoning layer is being configured.",
     }
-    with patch("src.rico_openai_agent.call_openai_minimal", return_value=fake_result):
+    with patch.dict(os.environ, {"RICO_AI_PROVIDER": "openai"}), \
+         patch("src.rico_openai_agent.call_openai_minimal", return_value=fake_result):
         result = chat_api._handle_active_user("bob@rico.ai", "what should I do next?")
 
     # Fallback shape preserved.

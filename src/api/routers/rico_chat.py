@@ -12,9 +12,13 @@ Routes:
   POST /api/v1/rico/upload-cv                   CV file upload + parsing
   POST /api/v1/rico/webhooks/telegram           Telegram bot webhook (called by Telegram)
   POST /api/v1/rico/webhooks/jotform            Jotform onboarding webhook (called by Jotform)
+  POST /api/v1/rico/webhooks/github             GitHub webhook (push, PR, issues, ping)
+  POST /api/v1/rico/chat/public                 Public chat (no JWT, session-based, rate-limited)
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import os
 import re
@@ -23,7 +27,7 @@ from typing import Any, Dict
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 import src.services.chat_service as chat_service
@@ -63,10 +67,32 @@ def _validate_jotform_secret(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Invalid or missing webhook secret")
 
 
+def _resolve_upload_user_id(
+    request: Request,
+    query_user_id: str | None,
+    form_user_id: str | None,
+) -> str:
+    """Prefer the authenticated user when present, otherwise accept legacy user_id inputs."""
+    try:
+        return get_current_user_id(request)
+    except HTTPException:
+        pass
+
+    user_id = (query_user_id or form_user_id or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=422, detail="user_id is required")
+    return user_id
+
+
 class RicoChatRequest(BaseModel):
     # user_id intentionally absent — derived from the authenticated JWT cookie.
     # Any user_id field sent in the body is ignored.
     message: str = Field(..., max_length=4096)
+
+
+class RicoPublicChatRequest(BaseModel):
+    message: str = Field(..., max_length=2048)
+    session_id: str = Field(..., min_length=8, max_length=64)
 
 
 class SavedSearchRequest(BaseModel):
@@ -117,6 +143,34 @@ def rico_chat(request: Request, payload: RicoChatRequest) -> Dict[str, Any]:
     user = get_current_user(request)   # raises 401 if unauthenticated
     user_id = user["email"]            # trust the JWT, never the request body
     return chat_service.send_message(user_id=user_id, message=payload.message)
+
+
+@router.post("/chat/public")
+@limiter.limit("10/minute")
+def rico_chat_public(request: Request, payload: RicoPublicChatRequest) -> Dict[str, Any]:
+    """Unauthenticated chat for landing page visitors.
+
+    Uses a client-supplied session_id (e.g. a UUID generated in the browser) as
+    the user identity.  Prefixed with 'public:' so these sessions are isolated
+    from real user accounts and never collide with JWT-authenticated user_ids.
+
+    Jotform is the fallback for users who prefer a form-based onboarding flow.
+    This endpoint is the primary entry point from the landing page.
+    """
+    # Sanitise the session_id — alphanumeric + hyphens only
+    safe_sid = re.sub(r"[^a-zA-Z0-9\-_]", "", payload.session_id)[:64]
+    if not safe_sid:
+        raise HTTPException(status_code=422, detail="Invalid session_id")
+    user_id = f"public:{safe_sid}"
+    result = chat_service.send_message(user_id=user_id, message=payload.message)
+    # Strip internal diagnostics from unauthenticated responses
+    return {
+        "message": result.get("message", ""),
+        "type": result.get("type", "response"),
+        "matches": result.get("matches"),
+        "options": result.get("options"),
+        "next_action": result.get("next_action"),
+    }
 
 
 @router.get("/openai-smoke")
@@ -173,8 +227,10 @@ def rico_openai_smoke(request: Request) -> Dict[str, Any]:
 async def rico_upload_cv(
     request: Request,
     file: UploadFile = File(...),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str | None = None,
+    form_user_id: str | None = Form(None, alias="user_id"),
 ) -> Dict[str, Any]:
+    resolved_user_id = _resolve_upload_user_id(request, user_id, form_user_id)
     data = await file.read()
     if len(data) > _MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File exceeds 10 MB limit")
@@ -185,7 +241,7 @@ async def rico_upload_cv(
     safe_name = _safe_filename(file.filename)
     parsed = chat_service.parse_cv(data, filename=safe_name)
     return {
-        "user_id": user_id,
+        "user_id": resolved_user_id,
         "filename": safe_name,
         "parsed": parsed,
     }
@@ -218,4 +274,33 @@ async def rico_jotform_webhook(request: Request) -> Dict[str, Any]:
         return chat_service.handle_jotform_submission(payload)
     except Exception as exc:
         logger.warning("jotform_webhook_error: %s: %s", type(exc).__name__, exc)
+        return {"status": "accepted", "message": "Webhook received, processing error logged"}
+
+
+@router.post("/webhooks/github")
+@limiter.limit(LIMIT_WEBHOOK)
+async def rico_github_webhook(request: Request) -> Dict[str, Any]:
+    raw_body = await request.body()
+    sig = request.headers.get("X-Hub-Signature-256", "")
+    secret = os.getenv("GITHUB_WEBHOOK_SECRET", "").strip()
+    if secret:
+        expected = "sha256=" + hmac.new(
+            secret.encode(), raw_body, hashlib.sha256
+        ).hexdigest()
+        if not sig or not hmac.compare_digest(sig, expected):
+            logger.warning("github_webhook: invalid or missing X-Hub-Signature-256")
+            raise HTTPException(status_code=403, detail="Invalid or missing GitHub webhook signature")
+    event = request.headers.get("X-GitHub-Event", "")
+    if not event:
+        raise HTTPException(status_code=400, detail="Missing X-GitHub-Event header")
+    try:
+        import json as _json
+        payload = _json.loads(raw_body) if raw_body else {}
+    except Exception:
+        logger.warning("github_webhook: invalid JSON body")
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    try:
+        return chat_service.handle_github_event(event, payload)
+    except Exception as exc:
+        logger.warning("github_webhook_error: %s: %s", type(exc).__name__, exc)
         return {"status": "accepted", "message": "Webhook received, processing error logged"}

@@ -5,6 +5,8 @@ layered API. Rico internals are fully mocked — no DB or Telegram tokens needed
 """
 from __future__ import annotations
 
+import hashlib
+import hmac as _hmac_module
 import io
 import os
 import sys
@@ -17,6 +19,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("ADMIN_EMAIL", "rico-test@example.com")
 os.environ.setdefault("ADMIN_PASSWORD", "ricopass123")
 os.environ.setdefault("JWT_SECRET", "ricosecret" + "x" * 21)
+
+
+@pytest.fixture(autouse=True)
+def clear_github_webhook_secret():
+    """Keep these route tests independent from any developer-local .env secret."""
+    original = os.environ.get("GITHUB_WEBHOOK_SECRET")
+    os.environ["GITHUB_WEBHOOK_SECRET"] = ""
+    try:
+        yield
+    finally:
+        if original is None:
+            os.environ.pop("GITHUB_WEBHOOK_SECRET", None)
+        else:
+            os.environ["GITHUB_WEBHOOK_SECRET"] = original
 
 # ── Shared test clients ───────────────────────────────────────────────────────
 
@@ -262,6 +278,133 @@ class TestRicoJotformWebhookRouteExists:
             r = client.post("/api/v1/rico/webhooks/jotform", json=payload)
         assert r.status_code == 200
         assert captured["payload"] == payload
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GitHub webhook route tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_GITHUB_PUSH_RESPONSE = {
+    "status": "ok",
+    "event": "push",
+    "repo": "org/repo",
+    "ref": "refs/heads/main",
+    "commits": 1,
+}
+_GITHUB_PING_RESPONSE = {"status": "ok", "message": "pong", "zen": "Keep it logically awesome."}
+
+
+def _github_sig(body: bytes, secret: str) -> str:
+    return "sha256=" + _hmac_module.new(secret.encode(), body, hashlib.sha256).hexdigest()
+
+
+class TestRicoGithubWebhookRouteExists:
+    def test_github_webhook_route_not_404(self, client):
+        import json
+        body = json.dumps({"zen": "Keep it logically awesome."}).encode()
+        with patch("src.services.chat_service.handle_github_event", return_value=_GITHUB_PING_RESPONSE):
+            r = client.post(
+                "/api/v1/rico/webhooks/github",
+                content=body,
+                headers={"X-GitHub-Event": "ping", "Content-Type": "application/json"},
+            )
+        assert r.status_code != 404, "GitHub webhook route is not mounted"
+
+    def test_github_ping_returns_200(self, client):
+        import json
+        body = json.dumps({"zen": "Keep it logically awesome."}).encode()
+        with patch("src.services.chat_service.handle_github_event", return_value=_GITHUB_PING_RESPONSE):
+            r = client.post(
+                "/api/v1/rico/webhooks/github",
+                content=body,
+                headers={"X-GitHub-Event": "ping", "Content-Type": "application/json"},
+            )
+        assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+        assert r.json()["status"] == "ok"
+
+    def test_github_push_event_returns_200(self, client):
+        import json
+        payload = {
+            "ref": "refs/heads/main",
+            "repository": {"full_name": "org/repo"},
+            "pusher": {"name": "alice"},
+            "commits": [{"id": "abc"}],
+        }
+        body = json.dumps(payload).encode()
+        with patch("src.services.chat_service.handle_github_event", return_value=_GITHUB_PUSH_RESPONSE):
+            r = client.post(
+                "/api/v1/rico/webhooks/github",
+                content=body,
+                headers={"X-GitHub-Event": "push", "Content-Type": "application/json"},
+            )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["status"] == "ok"
+        assert data["event"] == "push"
+
+    def test_github_missing_event_header_returns_400(self, client):
+        import json
+        body = json.dumps({}).encode()
+        r = client.post(
+            "/api/v1/rico/webhooks/github",
+            content=body,
+            headers={"Content-Type": "application/json"},
+        )
+        assert r.status_code == 400
+
+    def test_github_webhook_signature_enforced_when_secret_set(self, client):
+        import json
+        body = json.dumps({"zen": "test"}).encode()
+        with patch.dict(os.environ, {"GITHUB_WEBHOOK_SECRET": "supersecret"}):
+            r = client.post(
+                "/api/v1/rico/webhooks/github",
+                content=body,
+                headers={
+                    "X-GitHub-Event": "ping",
+                    "X-Hub-Signature-256": "sha256=badhash",
+                    "Content-Type": "application/json",
+                },
+            )
+        assert r.status_code == 403
+
+    def test_github_webhook_valid_signature_passes(self, client):
+        import json
+        secret = "supersecret"
+        body = json.dumps({"zen": "test"}).encode()
+        sig = _github_sig(body, secret)
+        with patch("src.services.chat_service.handle_github_event", return_value=_GITHUB_PING_RESPONSE), \
+             patch.dict(os.environ, {"GITHUB_WEBHOOK_SECRET": secret}):
+            r = client.post(
+                "/api/v1/rico/webhooks/github",
+                content=body,
+                headers={
+                    "X-GitHub-Event": "ping",
+                    "X-Hub-Signature-256": sig,
+                    "Content-Type": "application/json",
+                },
+            )
+        assert r.status_code == 200
+
+    def test_github_event_passed_to_service(self, client):
+        import json
+        captured = {}
+
+        def spy(event, payload):
+            captured["event"] = event
+            captured["payload"] = payload
+            return _GITHUB_PUSH_RESPONSE
+
+        body_dict = {"ref": "refs/heads/main", "commits": []}
+        body = json.dumps(body_dict).encode()
+        with patch("src.services.chat_service.handle_github_event", side_effect=spy):
+            r = client.post(
+                "/api/v1/rico/webhooks/github",
+                content=body,
+                headers={"X-GitHub-Event": "push", "Content-Type": "application/json"},
+            )
+        assert r.status_code == 200
+        assert captured["event"] == "push"
+        assert captured["payload"]["ref"] == "refs/heads/main"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

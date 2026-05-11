@@ -28,6 +28,31 @@ os.environ.setdefault("ADMIN_EMAIL", "rico-test@example.com")
 os.environ.setdefault("ADMIN_PASSWORD", "ricopass123")
 os.environ.setdefault("JWT_SECRET", "ricosecret" + "x" * 21)
 
+_AI_ENV_VARS = [
+    "OPENAI_API_KEY",
+    "OPEN_AI_API",
+    "HF_API_TOKEN",
+    "HF_TOKEN",
+    "HF_API_KEY",
+    "HUGGINGFACE_API_KEY",
+    "RICO_AI_PROVIDER",
+]
+
+
+@pytest.fixture(autouse=True)
+def clear_ai_env():
+    saved = {name: os.environ.get(name) for name in _AI_ENV_VARS}
+    for name in _AI_ENV_VARS:
+        os.environ.pop(name, None)
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
 
 @pytest.fixture
 def chat_api():

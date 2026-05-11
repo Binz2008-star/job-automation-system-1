@@ -1,12 +1,18 @@
-"""OpenAI tool-calling orchestration for Rico AI.
+"""Rico AI response layer.
 
-Reads OPENAI_API_KEY from the environment. Never hardcode API keys.
-This module is additive and does not affect the existing daily pipeline.
+Provider selection (via RICO_AI_PROVIDER env var):
+  hf (default) -- Hugging Face Inference API, zero OpenAI cost.
+  openai        -- OpenAI API, opt-in only for premium mode.
 
-HF free-mode fallback:
-  When OpenAI is unavailable and HF_TOKEN/HF_API_KEY is present,
-  a lightweight call to the Hugging Face Inference API is attempted.
-  If HF also fails, a safe templated fallback is returned.
+When RICO_AI_PROVIDER=hf (or unset):
+  - HF is called directly for rich replies.
+  - OpenAI is never called regardless of OPENAI_API_KEY presence.
+  - Templated fallback is used when HF is unavailable.
+
+When RICO_AI_PROVIDER=openai:
+  - OpenAI is called if OPENAI_API_KEY is present.
+  - HF is the cascade fallback.
+  - Templated fallback if both fail.
 """
 
 from __future__ import annotations
@@ -16,8 +22,6 @@ import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
-
-import requests
 
 from src.rico_identity import get_rico_system_prompt
 from src.rico_openai_runtime import (
@@ -56,7 +60,16 @@ class RicoOpenAIAgent:
     def hf_available(self) -> bool:
         """True when any HF key alias is set."""
         return bool(
-            os.getenv("HF_API_KEY") or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY")
+            os.getenv("HF_API_TOKEN") or os.getenv("HF_API_KEY")
+            or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY")
+        )
+
+    @property
+    def _use_openai(self) -> bool:
+        """True only when operator explicitly opts in via RICO_AI_PROVIDER=openai."""
+        return (
+            os.getenv("RICO_AI_PROVIDER", "hf").strip().lower() == "openai"
+            and bool(self.api_key)
         )
 
     def respond(self, user_message: str, user_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -68,17 +81,15 @@ class RicoOpenAIAgent:
                 "category": safety.category,
             }
 
-        if not self.available:
-            # Try HF free inference before falling back to templated text
+        # Default path: HF is the primary provider (zero OpenAI cost)
+        if not self._use_openai:
             if self.hf_available:
                 hf_result = self._call_hf_free(user_message, user_context)
                 if hf_result:
                     return hf_result
             return self._fallback_response()
 
-        # Delegate to the minimal Responses API helper. Tools / structured
-        # output / streaming are intentionally disabled until the prod call
-        # is proven stable end-to-end (see PR description).
+        # Premium path: RICO_AI_PROVIDER=openai explicitly set
         profile_context = (
             json.dumps(user_context, ensure_ascii=False)
             if user_context else None
@@ -93,14 +104,12 @@ class RicoOpenAIAgent:
                 "provider": "openai",
             }
 
-        # OpenAI failed (any reason, including 429) — cascade to HF first
+        # OpenAI failed — cascade to HF
         if self.hf_available:
             hf_result = self._call_hf_free(user_message, user_context)
             if hf_result:
                 return hf_result
 
-        # Both OpenAI and HF failed. If the OpenAI failure was a 429, surface
-        # that specifically so the frontend can show a rate-limit message.
         if result.get("is_rate_limited"):
             return {
                 "type": "openai_rate_limited",
@@ -110,13 +119,11 @@ class RicoOpenAIAgent:
                 "response_source": "rate_limited",
             }
 
-        # Generic failure: surface structured diagnostics. Never include the
-        # API key, raw exception headers, or the user's profile contents.
         return {
             "type": "openai_error_fallback",
             "message": result.get(
                 "text",
-                "Free mode is active. Rico can help set up your profile and guide your job search using free AI/fallback.",
+                "Free mode is active. Rico can help set up your profile and guide your job search.",
             ),
             "error": result.get("error"),
             "error_detail": result.get("error_detail"),
@@ -149,71 +156,34 @@ class RicoOpenAIAgent:
     def _call_hf_free(
         self, user_message: str, user_context: Optional[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
-        """Call a free Hugging Face inference model as a lightweight chat fallback.
+        """Delegate to rico_hf_client.generate_text for a consistent, configurable HF call.
 
+        Uses HF_TEXT_MODEL env var (default: HuggingFaceH4/zephyr-7b-beta).
         Returns None on failure so the caller can fall back to templated text.
-        Never raises — all errors are caught and logged safely.
         """
-        token = (
-            os.getenv("HF_API_KEY", "").strip()
-            or os.getenv("HF_TOKEN", "").strip()
-            or os.getenv("HUGGINGFACE_API_KEY", "").strip()
-        )
-        if not token:
-            return None
+        from src.rico_hf_client import generate_text, is_available
 
-        # Use an ungated, widely-available free-tier model.
-        # Zephyr-7b-beta, gemma-2b-it, and Mistral-7B-Instruct are gated.
-        # microsoft/DialoGPT-medium is truly open and ungated.
-        model = os.getenv("RICO_HF_MODEL", "microsoft/DialoGPT-medium")
-        url = f"https://api-inference.huggingface.co/models/{model}"
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        if not is_available():
+            return None
 
         system = (
-            "You are Rico, a helpful job-search assistant for the UAE. "
-            "Answer clearly, practically, and briefly."
+            "You are Rico, a helpful UAE job-search assistant. "
+            "Answer clearly, practically, and briefly. "
+            "Help users find jobs, prepare applications, and track opportunities in the UAE."
         )
         context_str = json.dumps(user_context, ensure_ascii=False) if user_context else ""
-        prompt = f"<|system|>\n{system}</s>\n\n{user_message}\nContext: {context_str}</s>\n<|assistant|>\n"
+        prompt = f"{user_message}\nContext: {context_str}" if context_str else user_message
 
-        try:
-            r = requests.post(
-                url,
-                json={"inputs": prompt, "parameters": {"max_new_tokens": 250, "temperature": 0.7}},
-                headers=headers,
-                timeout=25,
-            )
-            if r.status_code in (429, 503):
-                logger.debug("hf_rate_limited_or_overloaded code=%s", r.status_code)
-                return None
-            if r.status_code == 404:
-                logger.debug("hf_model_not_found code=404 model=%s", model)
-                return None
-            r.raise_for_status()
-            data = r.json()
-            # HF inference API returns [{"generated_text": "..."}] or list of strings
-            if isinstance(data, list) and len(data) > 0:
-                raw = data[0].get("generated_text", data[0]) if isinstance(data[0], dict) else data[0]
-            elif isinstance(data, dict):
-                raw = data.get("generated_text", "")
-            else:
-                raw = str(data)
-
-            # Strip the prompt echo if present
-            text = raw.split("<|assistant|>\n")[-1].strip() if "<|assistant|>" in raw else raw.strip()
-            if not text:
-                return None
-            return {
-                "type": "hf_response",
-                "message": text,
-                "provider": "huggingface",
-                "model": model,
-            }
-        except Exception as exc:
-            # Common errors are already handled above (429, 503, 404).
-            # Log unexpected errors at debug to keep production logs clean.
-            logger.debug("hf_fallback_failed error=%s model=%s", exc, model)
+        model = os.getenv("HF_TEXT_MODEL", "HuggingFaceH4/zephyr-7b-beta")
+        text = generate_text(prompt, system=system, max_new_tokens=300, model=model)
+        if not text:
             return None
+        return {
+            "type": "hf_response",
+            "message": text,
+            "provider": "huggingface",
+            "model": model,
+        }
 
     def _fallback_response(self) -> Dict[str, Any]:
         return {

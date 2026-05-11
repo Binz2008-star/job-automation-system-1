@@ -108,6 +108,53 @@ def handle_telegram_update(update: Dict[str, Any]) -> Dict[str, Any]:
     return process_telegram_update(update)
 
 
+def handle_github_event(event: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Dispatch an incoming GitHub webhook event.
+
+    Supported events: push, pull_request, issues, ping.
+    Unrecognised events are acknowledged but not processed.
+    """
+    logger.info("github_webhook: event=%s action=%s", event, payload.get("action"))
+
+    if event == "ping":
+        return {"status": "ok", "message": "pong", "zen": payload.get("zen", "")}
+
+    if event == "push":
+        repo = payload.get("repository", {}).get("full_name", "unknown")
+        ref = payload.get("ref", "")
+        pusher = payload.get("pusher", {}).get("name", "unknown")
+        commits = len(payload.get("commits", []))
+        logger.info(
+            "github_webhook: push repo=%s ref=%s pusher=%s commits=%d",
+            repo, ref, pusher, commits,
+        )
+        return {"status": "ok", "event": "push", "repo": repo, "ref": ref, "commits": commits}
+
+    if event == "pull_request":
+        action = payload.get("action", "")
+        pr = payload.get("pull_request", {})
+        repo = payload.get("repository", {}).get("full_name", "unknown")
+        logger.info(
+            "github_webhook: pull_request action=%s repo=%s pr=%s",
+            action, repo, pr.get("number"),
+        )
+        return {"status": "ok", "event": "pull_request", "action": action, "repo": repo}
+
+    if event == "issues":
+        action = payload.get("action", "")
+        issue = payload.get("issue", {})
+        repo = payload.get("repository", {}).get("full_name", "unknown")
+        logger.info(
+            "github_webhook: issues action=%s repo=%s issue=%s",
+            action, repo, issue.get("number"),
+        )
+        return {"status": "ok", "event": "issues", "action": action, "repo": repo}
+
+    logger.info("github_webhook: unhandled event=%s — acknowledging", event)
+    return {"status": "accepted", "event": event, "message": "Event acknowledged but not processed"}
+
+
 def handle_jotform_submission(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Process a Jotform onboarding webhook payload.

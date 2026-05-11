@@ -28,6 +28,32 @@ from src.models.onboarding import (
 from src.rico_agent import RicoProfile
 
 
+_AI_ENV_VARS = [
+    "OPENAI_API_KEY",
+    "OPEN_AI_API",
+    "HF_API_TOKEN",
+    "HF_TOKEN",
+    "HF_API_KEY",
+    "HUGGINGFACE_API_KEY",
+    "RICO_AI_PROVIDER",
+]
+
+
+@pytest.fixture(autouse=True)
+def clear_ai_env():
+    saved = {name: os.environ.get(name) for name in _AI_ENV_VARS}
+    for name in _AI_ENV_VARS:
+        os.environ.pop(name, None)
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _state(status: str, user_id: str = "u1") -> OnboardingState:
@@ -194,7 +220,8 @@ class TestCompletedUserRouting:
 
     def test_apply_returns_application(self):
         r = self._completed("I want to apply")
-        assert r["type"] == "application"
+        assert r["type"] == "confirmation_required"
+        assert r["intent"] == "apply_job"
 
     def test_interview_returns_interview_prep(self):
         r = self._completed("prepare me for interview")
@@ -202,7 +229,8 @@ class TestCompletedUserRouting:
 
     def test_generic_message_returns_assistant(self):
         r = self._completed("can you explain something")
-        assert r["type"] == "assistant"
+        assert r["type"] == "fallback_response"
+        assert "message" in r
 
     def test_completed_user_never_gets_onboarding_type(self):
         for msg in ["hello", "hi", "what's next", "start", "begin", "welcome"]:
