@@ -143,5 +143,13 @@ export async function getApplicationStats(): Promise<Record<string, number>> {
   const { data } = await api.get<Record<string, number>>(
     "/api/applications/stats"
   );
-  return data;
+
+  // Apply status aliases normalization for consistency with application list
+  const normalized: Record<string, number> = {};
+  for (const [key, value] of Object.entries(data)) {
+    const normalizedKey = STATUS_ALIASES[key] || key;
+    normalized[normalizedKey] = (normalized[normalizedKey] || 0) + value;
+  }
+
+  return normalized;
 }
