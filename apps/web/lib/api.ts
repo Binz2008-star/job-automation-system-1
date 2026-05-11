@@ -283,6 +283,22 @@ export async function submitOnboarding(
   return res.json() as Promise<{ status: string; updated_fields: string[] }>;
 }
 
+// Public chat — no auth required. Uses session_id stored in localStorage.
+export async function sendChatPublic(
+  message: string,
+  sessionId: string,
+  signal?: AbortSignal
+): Promise<ChatApiResponse> {
+  const res = await fetch(`${PROXY}/api/v1/rico/chat/public`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal,
+    body: JSON.stringify({ message, session_id: sessionId }),
+  });
+  if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
+  return res.json() as Promise<ChatApiResponse>;
+}
+
 // No user_id field — identity comes exclusively from the session cookie.
 export async function sendChat(
   message: string,

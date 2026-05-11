@@ -1,10 +1,19 @@
 "use client";
 
-import { DashboardShell } from "@/components/DashboardShell";
 import type { ChatApiResponse, JobMatch, RicoOption, UploadCVResponse } from "@/lib/api";
-import { sendChat, uploadCV } from "@/lib/api";
+import { sendChatPublic, uploadCV } from "@/lib/api";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+
+function getSessionId(): string {
+  if (typeof window === "undefined") return "ssr-session";
+  let sid = localStorage.getItem("rico_sid");
+  if (!sid) {
+    sid = "web-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9);
+    localStorage.setItem("rico_sid", sid);
+  }
+  return sid;
+}
 
 interface Message {
   id: number;
@@ -143,7 +152,7 @@ export default function ChatPage() {
     const slowHintId = setTimeout(() => setSlowHint(true), 5_000);
 
     try {
-      const res: ChatApiResponse = await sendChat(trimmed, controller.signal);
+      const res: ChatApiResponse = await sendChatPublic(trimmed, getSessionId(), controller.signal);
       const reply =
         res.response ??
         res.reply ??
@@ -247,7 +256,7 @@ export default function ChatPage() {
 
   if (sessionExpired) {
     return (
-      <DashboardShell title="Chat">
+      <div className="min-h-screen bg-[#06060f] flex items-center justify-center">
         <div className="flex max-w-lg flex-col items-center gap-4 rounded-2xl border border-white/5 bg-[#13132a]/80 p-8 text-center backdrop-blur-md">
           <p className="text-sm font-medium text-[#eeeef5]">Session expired.</p>
           <p className="text-sm text-[#5a5a7a]">Sign in again to continue chatting with Rico.</p>
@@ -255,12 +264,30 @@ export default function ChatPage() {
             Sign in
           </Link>
         </div>
-      </DashboardShell>
+      </div>
     );
   }
 
   return (
-    <DashboardShell title="Rico">
+    <div className="min-h-screen bg-[#06060f] flex flex-col relative overflow-hidden">
+      {/* Ambient glows matching landing page */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute -top-[250px] -left-[150px] w-[700px] h-[700px] rounded-full bg-[rgba(91,79,255,0.06)] blur-[140px]" />
+        <div className="absolute bottom-0 -right-[100px] w-[500px] h-[500px] rounded-full bg-[rgba(0,201,167,0.04)] blur-[140px]" />
+      </div>
+
+      {/* Top nav — minimal, matches landing */}
+      <header className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-white/[0.05]">
+        <Link href="/" className="flex items-center gap-2 text-white font-black text-lg tracking-tight">
+          <div className="w-8 h-8 rounded-[9px] bg-gradient-to-br from-[#5b4fff] to-[#8b5cf6] flex items-center justify-center text-sm font-black shadow-[0_4px_16px_rgba(91,79,255,0.3)]">R</div>
+          Rico<span className="text-[#5b4fff]">.ai</span>
+        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/login" className="text-[13px] text-[#5a5a7a] hover:text-white transition-colors">Sign in</Link>
+          <Link href="/dashboard" className="text-[12px] px-3 py-1.5 rounded-lg border border-white/10 text-[#a78bfa] hover:border-[#5b4fff]/50 transition-colors">Dashboard</Link>
+        </div>
+      </header>
+
       {/* Hidden file input for CV upload */}
       <input
         ref={fileInputRef}
@@ -272,7 +299,7 @@ export default function ChatPage() {
         onChange={handleCVUpload}
       />
 
-      <div className="flex flex-col h-[calc(100vh-130px)] max-w-3xl mx-auto relative">
+      <div className="relative z-10 flex flex-col flex-1 h-[calc(100vh-65px)] max-w-3xl w-full mx-auto px-4">
         {/* Messages Container */}
         <div className="flex-1 overflow-y-auto px-2 py-6 space-y-5 pb-32">
 
@@ -403,6 +430,6 @@ export default function ChatPage() {
           </p>
         </div>
       </div>
-    </DashboardShell>
+    </div>
   );
 }
