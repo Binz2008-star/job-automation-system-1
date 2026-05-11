@@ -745,7 +745,7 @@ class TestJobsRoutes:
                 "link": "https://example.com/job/ep-001",
             }
         }
-        with patch("src.services.jobs_service.save_job", return_value=True):
+        with patch("src.api.routers.jobs.save_job", return_value=True):
             r = auth_client.post("/api/v1/jobs/job-1/save", json=payload)
         assert r.status_code == 200
         body = r.json()
