@@ -31,6 +31,10 @@ OPENAI_FALLBACK_MODEL = os.getenv("OPENAI_FALLBACK_MODEL", "gpt-4.1-mini")
 _FALLBACK_TEXT = (
     "Free mode is active. Rico can help set up your profile and guide your job search using free AI/fallback."
 )
+_RATE_LIMITED_TEXT = (
+    "Rico's AI provider is currently rate-limited. "
+    "This is temporary — please try again in a minute."
+)
 _PROFILE_CONTEXT_MAX_CHARS = 1200
 _SMOKE_MAX_OUTPUT_TOKENS = 80
 _DEFAULT_MAX_OUTPUT_TOKENS = 500
@@ -106,6 +110,21 @@ def _failure_payload(last_error: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "error": last_error.get("error_type") if last_error else "UnknownOpenAIError",
         "error_detail": last_error,
         "text": _FALLBACK_TEXT,
+    }
+
+
+def _rate_limited_payload(last_error: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "success": False,
+        "type": "openai_rate_limited",
+        "response_source": "rate_limited",
+        "provider": "openai",
+        "provider_state": "rate_limited",
+        "openai_available": _api_key_present(),
+        "openai_model": OPENAI_PRIMARY_MODEL,
+        "error": "RateLimitError",
+        "error_detail": last_error,
+        "text": _RATE_LIMITED_TEXT,
     }
 
 
@@ -216,8 +235,12 @@ def call_openai_minimal(
 
         except Exception as exc:
             last_error = _safe_openai_error(exc)
+            is_rate_limit = (
+                last_error.get("status_code") == 429
+                or "RateLimitError" in last_error.get("error_type", "")
+            )
             logger.warning(
-                "Rico OpenAI call failed safely",
+                "Rico OpenAI rate limited — skipping retry" if is_rate_limit else "Rico OpenAI call failed safely",
                 extra={
                     "openai_error": last_error,
                     "model": model,
@@ -225,6 +248,11 @@ def call_openai_minimal(
                     "profile_context_present": profile_present,
                 },
             )
+            if is_rate_limit:
+                payload = _rate_limited_payload(last_error)
+                payload["profile_context_present"] = profile_present
+                payload["is_rate_limited"] = True
+                return payload
 
     payload = _failure_payload(last_error)
     payload["profile_context_present"] = profile_present

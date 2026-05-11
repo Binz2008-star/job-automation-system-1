@@ -1,3 +1,13 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+// DO NOT IMPORT FROM THIS MODULE. Scheduled for deletion in PR #86.
+
+/**
+ * @deprecated LEGACY — not imported anywhere.
+ * The active chat implementation is sendChat() in lib/api.ts, called directly
+ * by app/chat/page.tsx. This file targets /api/chat which does not exist.
+ * Remove in PR #86 (architecture cleanup).
+ */
+
 import api from "@/lib/client";
 import type { ChatRequest, ChatResponse } from "@/types";
 

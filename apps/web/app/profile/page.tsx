@@ -16,10 +16,10 @@ function Tag({ label }: { label: string }) {
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <>
+    <div>
       <dt className="text-[#5a5a7a]">{label}</dt>
       <dd>{children}</dd>
-    </>
+    </div>
   );
 }
 
@@ -153,13 +153,16 @@ function ProfileDetail({ profile }: { profile: ProfileResponse }) {
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<"auth" | "other" | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchProfile()
       .then(setProfile)
-      .catch(() => setError(true))
+      .catch((err: unknown) => {
+        const is401 = err instanceof Error && err.message.includes("401");
+        setError(is401 ? "auth" : "other");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -172,17 +175,29 @@ export default function ProfilePage() {
           </StatusCard>
         )}
 
-        {!loading && error && (
+        {!loading && error === "auth" && (
           <StatusCard title="Profile" badge="error">
-            <p className="mb-3 text-sm text-[#5a5a7a]">
-              Could not load your profile. Make sure you are signed in.
-            </p>
+            <p className="mb-3 text-sm text-[#5a5a7a]">Session expired. Please sign in again.</p>
             <Link
               href="/login"
+              className="inline-block rounded-lg bg-[#5b4fff] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#4a3fe0]"
+            >
+              Sign in →
+            </Link>
+          </StatusCard>
+        )}
+
+        {!loading && error === "other" && (
+          <StatusCard title="Profile" badge="error">
+            <p className="mb-3 text-sm text-[#5a5a7a]">
+              Could not load your profile. The backend may be temporarily unavailable.
+            </p>
+            <button
+              onClick={() => { setError(null); setLoading(true); fetchProfile().then(setProfile).catch(() => setError("other")).finally(() => setLoading(false)); }}
               className="text-xs text-[#a78bfa] hover:text-[#c4b5fd] transition-colors underline underline-offset-2"
             >
-              Go to sign in
-            </Link>
+              Try again
+            </button>
           </StatusCard>
         )}
 
@@ -211,6 +226,9 @@ export default function ProfilePage() {
                   Quick Start form →
                 </a>
               </div>
+              <p className="mt-3 text-xs text-[#5a5a7a]">
+                After submitting the Quick Start form, Rico automatically syncs your profile — no extra steps needed. Come back here to confirm.
+              </p>
             </StatusCard>
 
             <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#13132a]/60 p-5">

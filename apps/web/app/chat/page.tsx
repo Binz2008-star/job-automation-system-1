@@ -40,6 +40,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
+  const [slowHint, setSlowHint] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -67,8 +68,12 @@ export default function ChatPage() {
     setThinking(true);
     scrollBottom();
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45_000);
+    const slowHintId = setTimeout(() => setSlowHint(true), 5_000);
+
     try {
-      const res: ChatApiResponse = await sendChat(trimmed);
+      const res: ChatApiResponse = await sendChat(trimmed, controller.signal);
       const reply =
         res.response ??
         res.reply ??
@@ -81,9 +86,15 @@ export default function ChatPage() {
         res.data?.content ??
         "";
       const provider = res.provider ?? res.response_source ?? "unknown";
-      const freeMode = provider === "fallback" || provider === "none" || res.openai_available === false;
+      const isRateLimited = res.response_source === "rate_limited" || res.provider_state === "rate_limited";
+      const freeMode = isRateLimited || provider === "fallback" || provider === "none" || res.openai_available === false;
       const hfMode = provider === "huggingface" || provider === "hf";
-      if (!reply) {
+      if (isRateLimited) {
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "rico", text: "Rico's AI provider is rate-limited right now — this is temporary. Please try again in a minute.", freeMode: true },
+        ]);
+      } else if (!reply) {
         setMessages((prev) => [
           ...prev,
           { id: nextId(), role: "rico", text: "Rico returned an empty response. Please try again." },
@@ -92,15 +103,34 @@ export default function ChatPage() {
         setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: reply, freeMode: freeMode && !hfMode }]);
       }
     } catch (err) {
-      if (err instanceof Error && err.message.includes("401")) {
-        setSessionExpired(true);
-        return;
+      if (err instanceof Error) {
+        if (err.name === "AbortError") {
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: "rico", text: "Rico is taking longer than usual — this happens after a period of inactivity while the server wakes up. Please try again in 30 seconds." },
+          ]);
+          return;
+        }
+        if (err.message.includes("401")) {
+          setSessionExpired(true);
+          return;
+        }
+        if (err.name === "TypeError" || err.message === "Failed to fetch" || err.message.includes("network")) {
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: "rico", text: "Could not reach Rico. Check your connection or try again." },
+          ]);
+          return;
+        }
       }
       setMessages((prev) => [
         ...prev,
         { id: nextId(), role: "rico", text: "Something went wrong. Please try again." },
       ]);
     } finally {
+      clearTimeout(timeoutId);
+      clearTimeout(slowHintId);
+      setSlowHint(false);
       setThinking(false);
       scrollBottom();
       textareaRef.current?.focus();
@@ -214,7 +244,16 @@ export default function ChatPage() {
             </div>
           ))}
 
-          {thinking && <ThinkingIndicator />}
+          {thinking && (
+            <div className="flex flex-col gap-2">
+              <ThinkingIndicator />
+              {slowHint && (
+                <p className="text-[11px] text-[#5a5a7a] pl-1 animate-pulse">
+                  Rico is waking up — first request after idle can take up to a minute…
+                </p>
+              )}
+            </div>
+          )}
 
           <div ref={bottomRef} />
         </div>

@@ -185,6 +185,7 @@ export interface ChatApiResponse {
   answer?: string;
   response_source?: string;
   provider?: string;
+  provider_state?: string;
   openai_available?: boolean;
   hf_available?: boolean;
   data?: {
@@ -197,12 +198,14 @@ export interface ChatApiResponse {
 
 // No user_id field — identity comes exclusively from the session cookie.
 export async function sendChat(
-  message: string
+  message: string,
+  signal?: AbortSignal
 ): Promise<ChatApiResponse> {
   const res = await fetch(`${PROXY}/api/v1/rico/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
+    signal,
     body: JSON.stringify({ message }),
   });
   if (!res.ok) throw new Error(`Chat failed: ${res.status}`);

@@ -93,15 +93,25 @@ class RicoOpenAIAgent:
                 "provider": "openai",
             }
 
-        # OpenAI failed — try HF free inference as secondary path
+        # OpenAI failed (any reason, including 429) — cascade to HF first
         if self.hf_available:
             hf_result = self._call_hf_free(user_message, user_context)
             if hf_result:
                 return hf_result
 
-        # Failure: surface structured diagnostics so the smoke endpoint and
-        # chat response carry actionable error info.  Never include the API
-        # key, raw exception headers, or the user's profile contents.
+        # Both OpenAI and HF failed. If the OpenAI failure was a 429, surface
+        # that specifically so the frontend can show a rate-limit message.
+        if result.get("is_rate_limited"):
+            return {
+                "type": "openai_rate_limited",
+                "message": result.get("text"),
+                "provider": "openai",
+                "provider_state": "rate_limited",
+                "response_source": "rate_limited",
+            }
+
+        # Generic failure: surface structured diagnostics. Never include the
+        # API key, raw exception headers, or the user's profile contents.
         return {
             "type": "openai_error_fallback",
             "message": result.get(

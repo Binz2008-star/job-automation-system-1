@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { fetchSavedSearches, type SavedSearch } from "@/lib/api";
 import { StatusCard } from "@/components/StatusCard";
+import { fetchSavedSearches, type SavedSearch } from "@/lib/api";
+import { useEffect, useState } from "react";
 
 export function SavedSearchesList() {
   const [searches, setSearches] = useState<SavedSearch[]>([]);
-  const [error,    setError]    = useState(false);
-  const [loading,  setLoading]  = useState(true);
+  const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchSavedSearches()
@@ -48,10 +48,10 @@ export function SavedSearchesList() {
         {searches.map((s) => (
           <li
             key={s.id}
-            className="flex items-start justify-between gap-2 rounded-lg bg-zinc-800/50 px-3 py-2 text-sm"
+            className="flex items-start justify-between gap-2 rounded-lg bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.05)] px-3 py-2 text-sm"
           >
-            <span className="text-zinc-200 break-all">{s.query}</span>
-            <span className="shrink-0 text-xs text-zinc-500">
+            <span className="text-[#eeeef5] break-all">{s.query}</span>
+            <span className="shrink-0 text-xs text-[#5a5a7a]">
               {new Date(s.created_at).toLocaleDateString()}
             </span>
           </li>
