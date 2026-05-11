@@ -121,16 +121,20 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
+# CORS_ORIGINS: comma-separated list of allowed origins, or "*" for public endpoints.
+# Wildcard "*" disables credentials (incompatible per spec); use explicit origins for
+# authenticated routes. Set on Render: CORS_ORIGINS=https://your-vercel-app.vercel.app
 
 _origins_raw = os.getenv("CORS_ORIGINS", "http://localhost:3000")
-_origins = [o.strip() for o in _origins_raw.split(",") if o.strip()]
+_origins_list = [o.strip() for o in _origins_raw.split(",") if o.strip()]
+_wildcard = _origins_list == ["*"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_origins,
-    allow_credentials=True,   # required for httpOnly cookie auth
+    allow_origins=["*"] if _wildcard else _origins_list,
+    allow_credentials=False if _wildcard else True,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-API-Key"],
+    allow_headers=["Content-Type", "X-API-Key", "Authorization"],
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
