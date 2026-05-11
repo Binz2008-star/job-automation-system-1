@@ -203,10 +203,10 @@ export default function HomePage() {
         <div className="flex items-center gap-6">
           <a href="#how-it-works" className="hidden md:block text-[13px] text-[#5a5a7a] font-medium no-underline hover:text-[#eeeef5] transition-colors font-['Space_Grotesk',sans-serif]">How it works</a>
           <a href="#engine" className="hidden md:block text-[13px] text-[#5a5a7a] font-medium no-underline hover:text-[#eeeef5] transition-colors font-['Space_Grotesk',sans-serif]">Engine</a>
-          <Link href="/dashboard" className="hidden md:block text-[13px] text-[#5a5a7a] font-medium no-underline hover:text-[#eeeef5] transition-colors font-['Space_Grotesk',sans-serif]">Dashboard</Link>
-          <a href="https://form.jotform.com/261278237812056" target="_blank" rel="noopener noreferrer" className="bg-[#5b4fff] text-white px-5 py-2 rounded-lg text-[13px] font-semibold no-underline transition-all hover:bg-[#4b3ff0] font-['Space_Grotesk',sans-serif]">
+          <Link href="/login" className="hidden md:block text-[13px] text-[#5a5a7a] font-medium no-underline hover:text-[#eeeef5] transition-colors font-['Space_Grotesk',sans-serif]">Sign in</Link>
+          <Link href="/login" className="bg-[#5b4fff] text-white px-5 py-2 rounded-lg text-[13px] font-semibold no-underline transition-all hover:bg-[#4b3ff0] font-['Space_Grotesk',sans-serif]">
             Launch Rico
-          </a>
+          </Link>
         </div>
       </nav>
 
@@ -228,11 +228,11 @@ export default function HomePage() {
           </p>
 
           <div className="flex gap-3 items-center justify-center mb-16 flex-wrap">
-            <a href="https://form.jotform.com/261278237812056" target="_blank" rel="noopener noreferrer" className="bg-[#5b4fff] text-white px-8 py-3 rounded-lg text-[15px] font-semibold no-underline transition-all hover:bg-[#4b3ff0] font-['Space_Grotesk',sans-serif] shadow-[0_4px_20px_rgba(91,79,255,0.3)]">
-              Start Your Job Agent
-            </a>
-            <a href="#how-it-works" className="text-[#5a5a7a] px-6 py-3 text-[14px] font-medium no-underline transition-colors hover:text-[#eeeef5] flex items-center gap-1.5 font-['Space_Grotesk',sans-serif]">
-              See How Rico Works
+            <Link href="/login" className="bg-[#5b4fff] text-white px-8 py-3 rounded-lg text-[15px] font-semibold no-underline transition-all hover:bg-[#4b3ff0] font-['Space_Grotesk',sans-serif] shadow-[0_4px_20px_rgba(91,79,255,0.3)]">
+              Open My Dashboard
+            </Link>
+            <a href="https://form.jotform.com/261278237812056" target="_blank" rel="noopener noreferrer" className="text-[#5a5a7a] px-6 py-3 text-[14px] font-medium no-underline transition-colors hover:text-[#eeeef5] flex items-center gap-1.5 font-['Space_Grotesk',sans-serif]">
+              New user? Request access
               <ChevronRightIcon />
             </a>
           </div>

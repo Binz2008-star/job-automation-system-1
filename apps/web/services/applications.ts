@@ -25,8 +25,8 @@ const MOCK_APPS: Application[] = [
   {
     application_id: "app_001",
     job_id: "job_001",
-    title: "Environmental & Sustainability Manager",
-    company: "Parsons Corporation",
+    title: "Senior Manager — Operations",
+    company: "Acme Corporation",
     location: "Dubai, UAE",
     status: "applied",
     applied_at: "2026-04-20T09:00:00Z",
@@ -35,8 +35,8 @@ const MOCK_APPS: Application[] = [
   {
     application_id: "app_002",
     job_id: "job_002",
-    title: "HSSE Manager-CCGT",
-    company: "Al Jomaih Energy",
+    title: "Team Lead — Projects",
+    company: "Global Industries",
     location: "Abu Dhabi, UAE",
     status: "interview",
     applied_at: "2026-04-15T08:00:00Z",
@@ -45,8 +45,8 @@ const MOCK_APPS: Application[] = [
   {
     application_id: "app_003",
     job_id: "job_003",
-    title: "Senior Associate - ESG Compliance",
-    company: "EGA",
+    title: "Specialist — Compliance",
+    company: "Regional Group",
     location: "Dubai, UAE",
     status: "applied",
     applied_at: "2026-04-18T11:00:00Z",
@@ -55,8 +55,8 @@ const MOCK_APPS: Application[] = [
   {
     application_id: "app_004",
     job_id: "job_004",
-    title: "EHS Manager",
-    company: "Larsen & Toubro",
+    title: "Manager — Quality Assurance",
+    company: "Horizon Enterprises",
     location: "Abu Dhabi, UAE",
     status: "rejected",
     applied_at: "2026-04-10T10:00:00Z",

@@ -67,8 +67,11 @@ export default function ChatPage() {
     setThinking(true);
     scrollBottom();
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
     try {
-      const res: ChatApiResponse = await sendChat(trimmed);
+      const res: ChatApiResponse = await sendChat(trimmed, controller.signal);
       const reply =
         res.response ??
         res.reply ??
@@ -92,15 +95,32 @@ export default function ChatPage() {
         setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: reply, freeMode: freeMode && !hfMode }]);
       }
     } catch (err) {
-      if (err instanceof Error && err.message.includes("401")) {
-        setSessionExpired(true);
-        return;
+      if (err instanceof Error) {
+        if (err.name === "AbortError") {
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: "rico", text: "Rico took too long to respond. Please try again." },
+          ]);
+          return;
+        }
+        if (err.message.includes("401")) {
+          setSessionExpired(true);
+          return;
+        }
+        if (err.name === "TypeError" || err.message === "Failed to fetch" || err.message.includes("network")) {
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: "rico", text: "Could not reach Rico. Check your connection or try again." },
+          ]);
+          return;
+        }
       }
       setMessages((prev) => [
         ...prev,
         { id: nextId(), role: "rico", text: "Something went wrong. Please try again." },
       ]);
     } finally {
+      clearTimeout(timeoutId);
       setThinking(false);
       scrollBottom();
       textareaRef.current?.focus();
