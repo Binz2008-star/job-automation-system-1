@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+// DO NOT IMPORT FROM THIS MODULE. Scheduled for deletion in PR #86.
+
 /**
  * @deprecated LEGACY — not imported anywhere.
  * The active chat implementation is sendChat() in lib/api.ts, called directly
