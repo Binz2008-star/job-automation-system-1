@@ -177,12 +177,30 @@ export async function resetPassword(
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 
+export interface JobMatch {
+  title: string;
+  company: string;
+  location?: string;
+  score?: number;
+  why?: string;
+  actions?: string[];
+}
+
+export interface RicoOption {
+  action: string;
+  label: string;
+}
+
 export interface ChatApiResponse {
   response?: string;
   reply?: string;
   message?: string;
   content?: string;
   answer?: string;
+  type?: string;
+  matches?: JobMatch[];
+  options?: RicoOption[];
+  next_action?: string;
   response_source?: string;
   provider?: string;
   provider_state?: string;

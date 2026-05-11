@@ -3,20 +3,20 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://ricohunt.com"),
-  title: "Rico AI — Your AI-Native UAE Career Companion",
-  description: "Rico finds jobs that match your profile, scores them by fit, and helps you apply — so you can focus on the right opportunities.",
+  title: "Rico AI — Your Autonomous UAE Career Agent",
+  description: "Stop searching for UAE jobs manually. Rico AI finds matching jobs, scores them, sends Telegram alerts, helps you apply, and tracks everything — so you never have to scroll job boards again.",
   alternates: { canonical: "/" },
   openGraph: {
-    title: "Rico AI — Your AI-Native UAE Career Companion",
-    description: "Rico finds jobs that match your profile, scores them by fit, and helps you apply — so you can focus on the right opportunities.",
+    title: "Rico AI — Your Autonomous UAE Career Agent",
+    description: "The AI career agent that job-hunts for you in the UAE. Rico finds, scores, alerts, and tracks — and never applies without your approval.",
     type: "website",
     url: "https://ricohunt.com",
     siteName: "Rico AI",
   },
   twitter: {
     card: "summary",
-    title: "Rico AI — Your AI-Native UAE Career Companion",
-    description: "Rico finds jobs that match your profile, scores them by fit, and helps you apply — so you can focus on the right opportunities.",
+    title: "Rico AI — Your Autonomous UAE Career Agent",
+    description: "The AI career agent that job-hunts for you in the UAE. Rico finds, scores, alerts, and tracks — and never applies without your approval.",
   },
 };
 

@@ -1,8 +1,8 @@
 "use client";
 
 import { DashboardShell } from "@/components/DashboardShell";
-import type { ChatApiResponse } from "@/lib/api";
-import { sendChat } from "@/lib/api";
+import type { ChatApiResponse, JobMatch, RicoOption, UploadCVResponse } from "@/lib/api";
+import { sendChat, uploadCV } from "@/lib/api";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -10,6 +10,10 @@ interface Message {
   id: number;
   role: "user" | "rico";
   text: string;
+  type?: string;
+  matches?: JobMatch[];
+  options?: RicoOption[];
+  next_action?: string;
   freeMode?: boolean;
 }
 
@@ -17,11 +21,12 @@ let _id = 0;
 function nextId() { return ++_id; }
 
 const QUICK_ACTIONS = [
-  { label: "Tell Rico my target role", prompt: "I'd like to set my target role and job title preferences." },
-  { label: "Add UAE city preference", prompt: "I want to add my preferred cities in the UAE." },
-  { label: "Add salary expectation", prompt: "I want to share my salary expectations." },
-  { label: "List my key skills", prompt: "I want to share my key skills and experience." },
-  { label: "Ask what Rico can do", prompt: "What can you help me with?" },
+  { label: "Find UAE jobs for me", prompt: "Find matching UAE jobs for me." },
+  { label: "Set my target role", prompt: "I want to set my target role and job preferences." },
+  { label: "Upload my CV", prompt: "__cv_upload__" },
+  { label: "Track my applications", prompt: "Show my tracked applications." },
+  { label: "Prepare for an interview", prompt: "Help me prepare for an interview." },
+  { label: "Draft a cover letter", prompt: "Draft a cover letter for a job." },
 ];
 
 function ThinkingIndicator() {
@@ -36,14 +41,71 @@ function ThinkingIndicator() {
   );
 }
 
+function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt: string) => void }) {
+  const score = match.score ?? 0;
+  const scoreLabel = score >= 0.8 ? "Strong match" : score >= 0.6 ? "Good match" : "Possible match";
+  return (
+    <div className="rounded-xl border border-white/8 bg-[#0f0f24] p-3 mb-2">
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <div>
+          <div className="text-[13px] font-semibold text-white">{match.title}</div>
+          <div className="text-[11px] text-[#8080a0]">{match.company}{match.location ? ` · ${match.location}` : ""}</div>
+        </div>
+        {score > 0 && (
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${score >= 0.8
+            ? "bg-[#5dcaa522] text-[#5dcaa5]"
+            : score >= 0.6
+              ? "bg-[#facc1522] text-[#facc15]"
+              : "bg-[#a78bfa22] text-[#a78bfa]"
+            }`}>
+            {scoreLabel}
+          </span>
+        )}
+      </div>
+      {match.why && <p className="text-[11px] text-[#5a5a7a] mb-2 leading-relaxed">{match.why}</p>}
+      {match.actions && match.actions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          {match.actions.map((action) => (
+            <button
+              key={action}
+              onClick={() => onAction(`${action} — ${match.title} at ${match.company}`)}
+              className="text-[10px] px-2.5 py-1 rounded-lg border border-white/10 text-[#8080a0] hover:border-[#5b4fff]/40 hover:text-white transition-colors"
+            >
+              {action}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OptionButtons({ options, onAction }: { options: RicoOption[]; onAction: (prompt: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2 mt-2">
+      {options.map((opt) => (
+        <button
+          key={opt.action}
+          onClick={() => onAction(opt.label)}
+          className="text-[12px] px-3 py-2 rounded-xl border border-[#5b4fff]/30 text-[#a78bfa] hover:bg-[#5b4fff]/10 hover:border-[#5b4fff]/60 transition-colors"
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [slowHint, setSlowHint] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const promptSentRef = useRef(false);
 
   useEffect(() => {
@@ -53,6 +115,10 @@ export default function ChatPage() {
     if (prompt && !promptSentRef.current) {
       promptSentRef.current = true;
       sendMessage(prompt);
+    } else if (!promptSentRef.current) {
+      promptSentRef.current = true;
+      // Greet immediately
+      setMessages([{ id: 1, role: "rico", text: "Hi, I'm Rico. Tell me what UAE job you're looking for — role, city, and salary — and I'll find your best matches. You can also upload your CV and I'll set up your profile automatically." }]);
     }
   }, []);
 
@@ -61,6 +127,10 @@ export default function ChatPage() {
   }
 
   async function sendMessage(text: string) {
+    if (text === "__cv_upload__") {
+      fileInputRef.current?.click();
+      return;
+    }
     const trimmed = text.trim();
     if (!trimmed || thinking) return;
 
@@ -89,44 +159,39 @@ export default function ChatPage() {
       const isRateLimited = res.response_source === "rate_limited" || res.provider_state === "rate_limited";
       const freeMode = isRateLimited || provider === "fallback" || provider === "none" || res.openai_available === false;
       const hfMode = provider === "huggingface" || provider === "hf";
+
       if (isRateLimited) {
-        setMessages((prev) => [
-          ...prev,
-          { id: nextId(), role: "rico", text: "Rico's AI provider is rate-limited right now — this is temporary. Please try again in a minute.", freeMode: true },
-        ]);
-      } else if (!reply) {
-        setMessages((prev) => [
-          ...prev,
-          { id: nextId(), role: "rico", text: "Rico returned an empty response. Please try again." },
-        ]);
+        setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Rico's AI is rate-limited right now — please try again in a minute.", freeMode: true }]);
+      } else if (!reply && !res.matches && !res.options) {
+        setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Rico returned an empty response. Please try again." }]);
       } else {
-        setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: reply, freeMode: freeMode && !hfMode }]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextId(),
+            role: "rico",
+            text: reply,
+            type: res.type,
+            matches: res.matches as JobMatch[] | undefined,
+            options: res.options as RicoOption[] | undefined,
+            next_action: res.next_action,
+            freeMode: freeMode && !hfMode,
+          },
+        ]);
       }
     } catch (err) {
       if (err instanceof Error) {
         if (err.name === "AbortError") {
-          setMessages((prev) => [
-            ...prev,
-            { id: nextId(), role: "rico", text: "Rico is taking longer than usual — this happens after a period of inactivity while the server wakes up. Please try again in 30 seconds." },
-          ]);
+          setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Rico is taking longer than usual — the server may be waking up. Please try again in 30 seconds." }]);
           return;
         }
-        if (err.message.includes("401")) {
-          setSessionExpired(true);
-          return;
-        }
+        if (err.message.includes("401")) { setSessionExpired(true); return; }
         if (err.name === "TypeError" || err.message === "Failed to fetch" || err.message.includes("network")) {
-          setMessages((prev) => [
-            ...prev,
-            { id: nextId(), role: "rico", text: "Could not reach Rico. Check your connection or try again." },
-          ]);
+          setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Could not reach Rico. Check your connection or try again." }]);
           return;
         }
       }
-      setMessages((prev) => [
-        ...prev,
-        { id: nextId(), role: "rico", text: "Something went wrong. Please try again." },
-      ]);
+      setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Something went wrong. Please try again." }]);
     } finally {
       clearTimeout(timeoutId);
       clearTimeout(slowHintId);
@@ -134,6 +199,35 @@ export default function ChatPage() {
       setThinking(false);
       scrollBottom();
       textareaRef.current?.focus();
+    }
+  }
+
+  async function handleCVUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setUploadError("");
+    setMessages((prev) => [...prev, { id: nextId(), role: "user", text: `📎 Uploading CV: ${file.name}` }]);
+    setThinking(true);
+    scrollBottom();
+    try {
+      const result: UploadCVResponse = await uploadCV(file);
+      const p = result.parsed;
+      const summary = [
+        p.skills?.length ? `Skills detected: ${p.skills.slice(0, 6).join(", ")}` : "",
+        p.emails?.length ? `Email: ${p.emails[0]}` : "",
+        p.phones?.length ? `Phone: ${p.phones[0]}` : "",
+        p.years_experience_hint ? `Experience: ~${p.years_experience_hint} years` : "",
+      ].filter(Boolean).join(" · ");
+      const text = `CV received: **${file.name}**. I extracted your details and pre-filled your profile.${summary ? `\n\n${summary}` : ""}\n\nTell me your target roles and I'll start finding matches.`;
+      setMessages((prev) => [...prev, { id: nextId(), role: "rico", text }]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      setUploadError(msg);
+      setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: `Could not process CV: ${msg}. Please make sure it's a PDF under 10 MB.` }]);
+    } finally {
+      setThinking(false);
+      scrollBottom();
     }
   }
 
@@ -157,10 +251,7 @@ export default function ChatPage() {
         <div className="flex max-w-lg flex-col items-center gap-4 rounded-2xl border border-white/5 bg-[#13132a]/80 p-8 text-center backdrop-blur-md">
           <p className="text-sm font-medium text-[#eeeef5]">Session expired.</p>
           <p className="text-sm text-[#5a5a7a]">Sign in again to continue chatting with Rico.</p>
-          <Link
-            href="/login"
-            className="rounded-lg bg-[#5b4fff] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#4a3fe0]"
-          >
+          <Link href="/login" className="rounded-lg bg-[#5b4fff] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#4a3fe0]">
             Sign in
           </Link>
         </div>
@@ -168,47 +259,36 @@ export default function ChatPage() {
     );
   }
 
-  const isEmpty = messages.length === 0 && !thinking;
-
   return (
-    <DashboardShell title="Rico Assistant">
-      <div className="flex flex-col h-[calc(100vh-200px)] max-w-4xl mx-auto relative overflow-hidden">
+    <DashboardShell title="Rico">
+      {/* Hidden file input for CV upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf"
+        aria-label="Upload CV PDF"
+        title="Upload CV PDF"
+        className="hidden"
+        onChange={handleCVUpload}
+      />
+
+      <div className="flex flex-col h-[calc(100vh-130px)] max-w-3xl mx-auto relative">
         {/* Messages Container */}
-        <div className="flex-1 overflow-y-auto px-2 py-4 space-y-6 pb-28 scrollbar-hide">
-          {isEmpty && (
-            <div className="flex flex-col items-center justify-center h-full text-center opacity-30 py-20 animate-in fade-in duration-500">
-              <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4 border border-white/5 shadow-[0_4px_16px_rgba(91,79,255,0.1)]">
-                <span className="text-2xl">🤖</span>
-              </div>
-              <h3 className="font-['Cabinet_Grotesk',sans-serif] font-bold text-lg text-white">Rico is ready</h3>
-              <p className="text-sm max-w-xs mt-2 text-[#8080a0]">Ask about your profile, UAE job trends, or application status.</p>
+        <div className="flex-1 overflow-y-auto px-2 py-6 space-y-5 pb-32">
 
-              {/* Quick actions */}
-              <div className="mt-8">
-                <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-[#5a5a7a]">Quick start</p>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {QUICK_ACTIONS.map((qa) => (
-                    <button
-                      key={qa.label}
-                      onClick={() => sendMessage(qa.prompt)}
-                      disabled={thinking}
-                      className="rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2 text-xs text-[#8080a0] transition-colors hover:border-[rgba(91,79,255,0.3)] hover:bg-white/[0.05] hover:text-[#eeeef5] disabled:opacity-50"
-                    >
-                      {qa.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* How Rico works */}
-              <div className="mt-6 max-w-sm rounded-lg border border-white/5 bg-white/[0.02] px-4 py-3 text-left">
-                <p className="mb-1.5 text-xs font-medium text-[#8080a0]">How Rico works</p>
-                <ul className="flex flex-col gap-1 text-xs text-[#5a5a7a]">
-                  <li>· Tell Rico your target role, cities, salary, and skills — it saves them to your profile.</li>
-                  <li>· Once your profile is set, Rico searches jobs daily and scores them against your preferences.</li>
-                  <li>· Profile setup happens through this chat. No forms needed to get started.</li>
-                </ul>
-              </div>
+          {/* Quick start (shown above first message) */}
+          {messages.length <= 1 && !thinking && (
+            <div className="flex flex-wrap justify-center gap-2 pb-4">
+              {QUICK_ACTIONS.map((qa) => (
+                <button
+                  key={qa.label}
+                  onClick={() => sendMessage(qa.prompt)}
+                  disabled={thinking}
+                  className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-xs text-[#8080a0] transition-colors hover:border-[rgba(91,79,255,0.3)] hover:bg-white/[0.05] hover:text-[#eeeef5] disabled:opacity-50"
+                >
+                  {qa.label}
+                </button>
+              ))}
             </div>
           )}
 
@@ -216,24 +296,37 @@ export default function ChatPage() {
           {messages.map((m) => (
             <div
               key={m.id}
-              className={`flex items-end gap-2 animate-in fade-in slide-in-from-bottom-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}
+              className={`flex items-end gap-2 animate-in fade-in slide-in-from-bottom-2 ${m.role === "user" ? "justify-end" : "justify-start"
+                }`}
             >
               {m.role === "rico" && (
-                <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#5b4fff] to-[#8b5cf6] flex items-center justify-center text-[10px] font-black text-white shrink-0 mb-1 shadow-[0_2px_8px_rgba(91,79,255,0.3)]">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#5b4fff] to-[#8b5cf6] flex items-center justify-center text-[11px] font-black text-white shrink-0 mb-1 shadow-[0_2px_8px_rgba(91,79,255,0.3)]">
                   R
                 </div>
               )}
-              <div
-                className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-[15px] leading-relaxed shadow-sm ${m.role === "user"
-                  ? "rounded-tr-none bg-[#5b4fff] text-white shadow-[0_4px_15px_rgba(91,79,255,0.2)]"
-                  : "rounded-tl-none bg-[#13132a] border border-white/5 text-[#eeeef5] backdrop-blur-md"
-                  }`}
-              >
-                {m.text}
+              <div className={`max-w-[82%] ${m.role === "user"
+                ? "rounded-2xl rounded-tr-none bg-[#5b4fff] px-4 py-3 text-[14px] text-white leading-relaxed shadow-[0_4px_15px_rgba(91,79,255,0.2)]"
+                : "rounded-2xl rounded-tl-none bg-[#13132a] border border-white/5 px-4 py-3 text-[14px] text-[#eeeef5] leading-relaxed backdrop-blur-md"
+                }`}>
+                {/* Message text */}
+                {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
+
+                {/* Job match cards */}
+                {m.matches && m.matches.length > 0 && (
+                  <div className="mt-3">
+                    {m.matches.map((match, i) => (
+                      <JobMatchCard key={i} match={match} onAction={(prompt) => sendMessage(prompt)} />
+                    ))}
+                  </div>
+                )}
+
+                {/* Option buttons */}
+                {m.options && m.options.length > 0 && (
+                  <OptionButtons options={m.options} onAction={(prompt) => sendMessage(prompt)} />
+                )}
+
                 {m.freeMode && (
-                  <p className="mt-1.5 text-[11px] text-[#5a5a7a]">
-                    Free mode — AI fallback active
-                  </p>
+                  <p className="mt-2 text-[11px] text-[#5a5a7a]">Free mode — HF fallback active</p>
                 )}
               </div>
               {m.role === "user" && (
@@ -248,7 +341,7 @@ export default function ChatPage() {
             <div className="flex flex-col gap-2">
               <ThinkingIndicator />
               {slowHint && (
-                <p className="text-[11px] text-[#5a5a7a] pl-1 animate-pulse">
+                <p className="text-[11px] text-[#5a5a7a] pl-9 animate-pulse">
                   Rico is waking up — first request after idle can take up to a minute…
                 </p>
               )}
@@ -258,36 +351,55 @@ export default function ChatPage() {
           <div ref={bottomRef} />
         </div>
 
-        {/* Input — Rico Floating Glass */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#06060f] via-[#06060f]/90 to-transparent">
-          <div className="relative group">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={thinking}
-              rows={1}
-              placeholder="Ask Rico anything..."
-              className="w-full resize-none bg-[#13132a]/80 border border-white/10 backdrop-blur-xl rounded-2xl py-4 pl-5 pr-14 text-sm text-white placeholder:text-[#5a5a7a] focus:outline-none focus:border-[#5b4fff]/50 transition-all shadow-2xl"
-            />
+        {/* Floating input bar */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#06060f] via-[#06060f]/95 to-transparent">
+          {uploadError && (
+            <p className="text-[11px] text-red-400 mb-2 text-center">{uploadError}</p>
+          )}
+          <div className="flex items-end gap-2">
+            {/* CV upload button */}
             <button
-              onClick={handleSend}
-              disabled={thinking || !input.trim()}
-              className="absolute right-2 top-2 bottom-2 w-10 h-10 rounded-xl bg-[#5b4fff] text-white flex items-center justify-center hover:bg-[#4a3fdf] transition-all disabled:opacity-30 disabled:grayscale"
-              aria-label={thinking ? "Sending…" : "Send message"}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={thinking}
+              title="Upload your CV (PDF)"
+              className="w-10 h-10 rounded-xl border border-white/10 bg-[#13132a]/80 text-[#8080a0] flex items-center justify-center hover:border-[#5b4fff]/40 hover:text-white transition-all disabled:opacity-30 shrink-0"
+              aria-label="Upload CV"
             >
-              {thinking ? (
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
-                </svg>
-              )}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
             </button>
+
+            {/* Text input */}
+            <div className="relative flex-1">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={thinking}
+                rows={1}
+                placeholder="Ask Rico anything — jobs, CV, applications, interviews…"
+                className="w-full resize-none bg-[#13132a]/80 border border-white/10 backdrop-blur-xl rounded-2xl py-3 pl-4 pr-12 text-sm text-white placeholder:text-[#5a5a7a] focus:outline-none focus:border-[#5b4fff]/50 transition-all shadow-2xl"
+              />
+              <button
+                onClick={handleSend}
+                disabled={thinking || !input.trim()}
+                className="absolute right-2 top-1.5 bottom-1.5 w-9 h-9 rounded-xl bg-[#5b4fff] text-white flex items-center justify-center hover:bg-[#4a3fdf] transition-all disabled:opacity-30 disabled:grayscale"
+                aria-label={thinking ? "Sending…" : "Send"}
+              >
+                {thinking ? (
+                  <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
-          <p className="text-center text-[10px] text-[#5a5a7a] mt-2 uppercase tracking-widest font-bold opacity-50">
-            Enter to send · Shift+Enter for new line
+          <p className="text-center text-[10px] text-[#5a5a7a] mt-2 opacity-40">
+            Enter to send · Shift+Enter for new line · 📎 to upload CV
           </p>
         </div>
       </div>
