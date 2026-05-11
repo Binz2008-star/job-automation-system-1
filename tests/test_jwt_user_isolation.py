@@ -145,14 +145,19 @@ class TestApplicationsRouteIsolation:
             r = tc.get("/api/v1/applications")
         assert r.status_code == 503
 
-    def test_user_not_in_db_returns_404(self):
+    def test_new_auth_user_auto_provisioned_returns_200(self):
+        """New auth user with no rico_users row is auto-provisioned and gets empty list."""
         db = MagicMock()
         db.available = True
         db.get_user_bundle.return_value = None
-        tc = _client_with_token("ghost@rico.ai")
+        db.upsert_user.return_value = {"id": "new-uuid"}
+        db.get_recommendations.return_value = []
+        tc = _client_with_token("newuser@rico.ai")
         with patch("src.repositories.applications_repo._db", return_value=db):
             r = tc.get("/api/v1/applications")
-        assert r.status_code == 404
+        assert r.status_code == 200
+        assert r.json()["applications"] == []
+        db.upsert_user.assert_called_once()
 
     def test_jwt_user_id_passed_to_repo_not_none(self):
         """The route must never call get_all without user_id."""
@@ -262,14 +267,30 @@ class TestApplicationsRepoFallbackRemoval:
                 get_all(user_id="alice@rico.ai")
         assert exc_info.value.status_code == 503
 
-    def test_get_all_with_user_id_user_not_found_raises_404(self):
+    def test_get_all_new_auth_user_auto_provisioned(self):
+        """P1: user in auth table but not rico_users → auto-provision, return empty list."""
         from src.repositories.applications_repo import get_all
         db = MagicMock()
         db.get_user_bundle.return_value = None
+        db.upsert_user.return_value = {"id": "new-uuid"}
+        db.get_recommendations.return_value = []
+        with patch("src.repositories.applications_repo._db", return_value=db):
+            result = get_all(user_id="newuser@rico.ai")
+        assert result == []
+        db.upsert_user.assert_called_once()
+        call_payload = db.upsert_user.call_args[0][0]
+        assert call_payload["email"] == "newuser@rico.ai"
+        assert call_payload["source"] == "auth_register"
+
+    def test_get_all_resolver_db_exception_raises_503_not_404(self):
+        """P2: transient DB error in resolver must surface as 503, not 404."""
+        from src.repositories.applications_repo import get_all
+        db = MagicMock()
+        db.get_user_bundle.side_effect = Exception("connection timeout")
         with patch("src.repositories.applications_repo._db", return_value=db):
             with pytest.raises(HTTPException) as exc_info:
-                get_all(user_id="ghost@rico.ai")
-        assert exc_info.value.status_code == 404
+                get_all(user_id="alice@rico.ai")
+        assert exc_info.value.status_code == 503
 
     def test_get_stats_with_user_id_db_unavailable_raises_503(self):
         from src.repositories.applications_repo import get_stats
