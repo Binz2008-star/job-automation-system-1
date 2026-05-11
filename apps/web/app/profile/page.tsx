@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { fetchProfile, type ProfileResponse } from "@/lib/api";
 import { DashboardShell } from "@/components/DashboardShell";
 import { StatusCard } from "@/components/StatusCard";
+import { fetchProfile, type ProfileResponse } from "@/lib/api";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 function Tag({ label }: { label: string }) {
   return (
@@ -37,6 +37,17 @@ function ChatCTA({ message }: { message: string }) {
   );
 }
 
+function ChatEditCTA({ prompt }: { prompt: string }) {
+  return (
+    <Link
+      href={`/chat?prompt=${encodeURIComponent(prompt)}`}
+      className="ml-2 text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors underline underline-offset-2"
+    >
+      Edit
+    </Link>
+  );
+}
+
 function ProfileDetail({ profile }: { profile: ProfileResponse }) {
   const hasJobPrefs =
     (profile.target_roles?.length ?? 0) > 0 ||
@@ -53,97 +64,96 @@ function ProfileDetail({ profile }: { profile: ProfileResponse }) {
         <dl className="grid grid-cols-1 gap-y-3 text-sm sm:grid-cols-2 sm:gap-x-6">
           <Row label="Name">
             <span className="text-zinc-200">{profile.name ?? "—"}</span>
+            <ChatEditCTA prompt="Update my name" />
           </Row>
           <Row label="Email">
             <span className="text-zinc-200">{profile.email ?? "—"}</span>
           </Row>
-          {profile.phone && (
-            <Row label="Phone">
-              <span className="text-zinc-200">{profile.phone}</span>
-            </Row>
-          )}
-          {profile.telegram_username && (
-            <Row label="Telegram">
-              <span className="text-zinc-200">{profile.telegram_username}</span>
-            </Row>
-          )}
-          {profile.visa_status && (
-            <Row label="Visa">
-              <span className="text-zinc-200">{profile.visa_status}</span>
-            </Row>
-          )}
-          {profile.notice_period && (
-            <Row label="Notice">
-              <span className="text-zinc-200">{profile.notice_period}</span>
-            </Row>
-          )}
+          <Row label="Phone">
+            <span className="text-zinc-200">{profile.phone ?? "—"}</span>
+            <ChatEditCTA prompt="Update my phone number" />
+          </Row>
+          <Row label="Telegram">
+            <span className="text-zinc-200">{profile.telegram_username ?? "—"}</span>
+            <ChatEditCTA prompt="Update my Telegram username" />
+          </Row>
+          <Row label="Visa">
+            <span className="text-zinc-200">{profile.visa_status ?? "—"}</span>
+            <ChatEditCTA prompt="Update my visa status" />
+          </Row>
+          <Row label="Notice">
+            <span className="text-zinc-200">{profile.notice_period ?? "—"}</span>
+            <ChatEditCTA prompt="Update my notice period" />
+          </Row>
         </dl>
       </StatusCard>
 
       {/* Job preferences */}
-      {hasJobPrefs ? (
-        <StatusCard title="Job preferences" badge="live">
+      <StatusCard title="Job preferences" badge={hasJobPrefs ? "live" : "pending"}>
+        {hasJobPrefs ? (
           <dl className="grid grid-cols-1 gap-y-3 text-sm sm:grid-cols-2 sm:gap-x-6">
-            {(profile.target_roles?.length ?? 0) > 0 && (
-              <Row label="Target roles">
+            <Row label="Target roles">
+              {(profile.target_roles?.length ?? 0) > 0 ? (
                 <div className="flex flex-wrap gap-1">
                   {profile.target_roles!.map((r) => <Tag key={r} label={r} />)}
                 </div>
-              </Row>
-            )}
-            {(profile.preferred_cities?.length ?? 0) > 0 && (
-              <Row label="Cities">
+              ) : (
+                <span className="text-zinc-200">—</span>
+              )}
+              <ChatEditCTA prompt="Update my target roles" />
+            </Row>
+            <Row label="Cities">
+              {(profile.preferred_cities?.length ?? 0) > 0 ? (
                 <div className="flex flex-wrap gap-1">
                   {profile.preferred_cities!.map((c) => <Tag key={c} label={c} />)}
                 </div>
-              </Row>
-            )}
-            {profile.salary_expectation_aed != null && (
-              <Row label="Salary target">
-                <span className="text-zinc-200">
-                  AED {profile.salary_expectation_aed.toLocaleString()}
-                </span>
-              </Row>
-            )}
-            {profile.minimum_salary_aed != null && (
-              <Row label="Minimum salary">
-                <span className="text-zinc-200">
-                  AED {profile.minimum_salary_aed.toLocaleString()}
-                </span>
-              </Row>
-            )}
-            {profile.years_experience != null && (
-              <Row label="Experience">
-                <span className="text-zinc-200">{profile.years_experience} yrs</span>
-              </Row>
-            )}
+              ) : (
+                <span className="text-zinc-200">—</span>
+              )}
+              <ChatEditCTA prompt="Update my preferred cities" />
+            </Row>
+            <Row label="Salary target">
+              <span className="text-zinc-200">
+                {profile.salary_expectation_aed != null ? `AED ${profile.salary_expectation_aed.toLocaleString()}` : "—"}
+              </span>
+              <ChatEditCTA prompt="Update my salary target" />
+            </Row>
+            <Row label="Minimum salary">
+              <span className="text-zinc-200">
+                {profile.minimum_salary_aed != null ? `AED ${profile.minimum_salary_aed.toLocaleString()}` : "—"}
+              </span>
+              <ChatEditCTA prompt="Update my minimum salary" />
+            </Row>
+            <Row label="Experience">
+              <span className="text-zinc-200">
+                {profile.years_experience != null ? `${profile.years_experience} yrs` : "—"}
+              </span>
+              <ChatEditCTA prompt="Update my years of experience" />
+            </Row>
           </dl>
-        </StatusCard>
-      ) : (
-        <StatusCard title="Job preferences" badge="pending">
+        ) : (
           <ChatCTA message="Tell Rico your target roles, preferred cities, and salary expectations to complete your job preferences." />
-        </StatusCard>
-      )}
+        )}
+      </StatusCard>
 
       {/* Skills */}
-      {hasSkills ? (
-        <StatusCard title="Skills" badge="live">
+      <StatusCard title="Skills" badge={hasSkills ? "live" : "pending"}>
+        {hasSkills ? (
           <div className="flex flex-wrap gap-1.5">
             {profile.skills!.map((s) => <Tag key={s} label={s} />)}
+            <ChatEditCTA prompt="Update my skills" />
           </div>
-        </StatusCard>
-      ) : (
-        <StatusCard title="Skills" badge="pending">
+        ) : (
           <ChatCTA message="Share your skills with Rico to improve job matching accuracy." />
-        </StatusCard>
-      )}
+        )}
+      </StatusCard>
     </div>
   );
 }
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
-  const [error,   setError]   = useState(false);
+  const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

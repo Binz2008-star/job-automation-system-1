@@ -175,10 +175,26 @@ export async function resetPassword(
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 
+export interface ChatApiResponse {
+  response?: string;
+  reply?: string;
+  message?: string;
+  content?: string;
+  answer?: string;
+  response_source?: string;
+  openai_available?: boolean;
+  data?: {
+    response?: string;
+    reply?: string;
+    message?: string;
+    content?: string;
+  };
+}
+
 // No user_id field — identity comes exclusively from the session cookie.
 export async function sendChat(
   message: string
-): Promise<{ reply?: string; message?: string }> {
+): Promise<ChatApiResponse> {
   const res = await fetch(`${PROXY}/api/v1/rico/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -186,5 +202,5 @@ export async function sendChat(
     body: JSON.stringify({ message }),
   });
   if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
-  return res.json() as Promise<{ reply?: string; message?: string }>;
+  return res.json() as Promise<ChatApiResponse>;
 }

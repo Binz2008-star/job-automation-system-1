@@ -1,25 +1,27 @@
 "use client";
 
-import { useRef, useState } from "react";
-import Link from "next/link";
 import { DashboardShell } from "@/components/DashboardShell";
+import type { ChatApiResponse } from "@/lib/api";
 import { sendChat } from "@/lib/api";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 
 interface Message {
   id: number;
   role: "user" | "rico";
   text: string;
+  freeMode?: boolean;
 }
 
 let _id = 0;
 function nextId() { return ++_id; }
 
 const QUICK_ACTIONS = [
-  { label: "Tell Rico my target role",  prompt: "I'd like to set my target role and job title preferences." },
-  { label: "Add UAE city preference",   prompt: "I want to add my preferred cities in the UAE." },
-  { label: "Add salary expectation",    prompt: "I want to share my salary expectations." },
-  { label: "List my key skills",        prompt: "I want to share my key skills and experience." },
-  { label: "Ask what Rico can do",      prompt: "What can you help me with?" },
+  { label: "Tell Rico my target role", prompt: "I'd like to set my target role and job title preferences." },
+  { label: "Add UAE city preference", prompt: "I want to add my preferred cities in the UAE." },
+  { label: "Add salary expectation", prompt: "I want to share my salary expectations." },
+  { label: "List my key skills", prompt: "I want to share my key skills and experience." },
+  { label: "Ask what Rico can do", prompt: "What can you help me with?" },
 ];
 
 function ThinkingIndicator() {
@@ -41,12 +43,23 @@ function ThinkingIndicator() {
 }
 
 export default function ChatPage() {
-  const [messages,       setMessages]       = useState<Message[]>([]);
-  const [input,          setInput]          = useState("");
-  const [thinking,       setThinking]       = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [thinking, setThinking] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const bottomRef   = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const promptSentRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const prompt = params.get("prompt");
+    if (prompt && !promptSentRef.current) {
+      promptSentRef.current = true;
+      sendMessage(prompt);
+    }
+  }, []);
 
   function scrollBottom() {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
@@ -61,9 +74,27 @@ export default function ChatPage() {
     scrollBottom();
 
     try {
-      const res = await sendChat(trimmed);
-      const reply = res.reply ?? res.message ?? "—";
-      setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: reply }]);
+      const res: ChatApiResponse = await sendChat(trimmed);
+      const reply =
+        res.response ??
+        res.reply ??
+        res.message ??
+        res.content ??
+        res.answer ??
+        res.data?.response ??
+        res.data?.reply ??
+        res.data?.message ??
+        res.data?.content ??
+        "";
+      const freeMode = res.response_source === "free_mode" || res.openai_available === false;
+      if (!reply) {
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "rico", text: "Rico returned an empty response. Please try again." },
+        ]);
+      } else {
+        setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: reply, freeMode }]);
+      }
     } catch (err) {
       if (err instanceof Error && err.message.includes("401")) {
         setSessionExpired(true);
@@ -178,13 +209,17 @@ export default function ChatPage() {
                 className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                    m.role === "user"
-                      ? "rounded-br-sm bg-indigo-600 text-white"
-                      : "rounded-bl-sm bg-zinc-800 text-zinc-200"
-                  }`}
+                  className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${m.role === "user"
+                    ? "rounded-br-sm bg-indigo-600 text-white"
+                    : "rounded-bl-sm bg-zinc-800 text-zinc-200"
+                    }`}
                 >
                   {m.text}
+                  {m.freeMode && (
+                    <p className="mt-1.5 text-[11px] text-zinc-500">
+                      Free mode — OpenAI unavailable
+                    </p>
+                  )}
                 </div>
               </div>
             ))}

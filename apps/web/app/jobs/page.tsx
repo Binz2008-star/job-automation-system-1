@@ -43,7 +43,7 @@ export default function JobsPage() {
     const job = jobs.find((j) => j.job_id === jobId);
     if (!job) return;
     if (action === "apply") {
-      await applyJob(jobId, {
+      const result = await applyJob(jobId, {
         job: {
           link: job.apply_url,
           title: job.title,
@@ -52,7 +52,12 @@ export default function JobsPage() {
           score: job.score,
         },
       });
-      toast("Application submitted ✓", "success");
+      const successStatuses = ["applied", "success", "submitted", "saved"];
+      if (successStatuses.includes(String(result.status ?? "").toLowerCase())) {
+        toast("Application submitted ✓", "success");
+      } else {
+        toast(result.message || "Manual apply required for this job.", "error");
+      }
     } else {
       toast("Action recorded", "success");
     }
