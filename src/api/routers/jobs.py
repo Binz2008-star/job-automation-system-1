@@ -11,7 +11,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from src.api.deps import get_current_user
 from src.schemas.jobs import JobActionRequest, JobActionResponse, JobListResponse
 from src.services.apply_service import apply_to_job
-from src.services.jobs_service import block_company, get_job, list_jobs, skip_job
+from src.services.jobs_service import (
+    block_company,
+    get_job,
+    list_jobs,
+    save_job,
+    skip_job,
+)
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
@@ -63,6 +69,18 @@ def skip_job_route(
     skipped = skip_job(req.job)
     if skipped:
         return JobActionResponse(status="skipped", message="Job skipped and persisted")
+    return JobActionResponse(status="already_tracked", message="Job was already tracked")
+
+
+@router.post("/{job_id}/save", response_model=JobActionResponse)
+def save_job_route(
+    job_id: str,
+    req: JobActionRequest,
+    _user: dict = Depends(get_current_user),
+) -> JobActionResponse:
+    saved = save_job(req.job)
+    if saved:
+        return JobActionResponse(status="saved", message="Job saved and persisted")
     return JobActionResponse(status="already_tracked", message="Job was already tracked")
 
 

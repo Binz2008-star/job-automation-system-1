@@ -729,3 +729,24 @@ class TestRicoSavedSearchesRoute:
         r = auth_client.post("/api/v1/rico/settings/saved-searches",
                              json={"query": ""})
         assert r.status_code == 422
+
+
+class TestJobsRoutes:
+    def test_save_job_requires_auth(self, client):
+        r = client.post("/api/v1/jobs/job-1/save", json={"job": {"title": "Role"}})
+        assert r.status_code == 401
+
+    def test_save_job_route_returns_200(self, auth_client):
+        payload = {
+            "job": {
+                "title": "Risk Manager",
+                "company": "Gulf Corp",
+                "location": "Abu Dhabi, UAE",
+                "link": "https://example.com/job/ep-001",
+            }
+        }
+        with patch("src.services.jobs_service.save_job", return_value=True):
+            r = auth_client.post("/api/v1/jobs/job-1/save", json=payload)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["status"] == "saved"

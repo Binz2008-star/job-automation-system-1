@@ -1,8 +1,10 @@
 "use client";
 
 import type { ChatApiResponse, JobMatch, RicoOption, UploadCVResponse } from "@/lib/api";
-import { sendChatPublic, uploadCV } from "@/lib/api";
+import { fetchMe, logout, sendChat, sendChatPublic, uploadCV } from "@/lib/api";
+import { buildAuthHref } from "@/lib/redirect";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 function getSessionId(): string {
@@ -26,6 +28,8 @@ interface Message {
   freeMode?: boolean;
 }
 
+type ChatAudience = "checking" | "authenticated" | "public";
+
 let _id = 0;
 function nextId() { return ++_id; }
 
@@ -37,6 +41,8 @@ const QUICK_ACTIONS = [
   { label: "Prepare for an interview", prompt: "Help me prepare for an interview." },
   { label: "Draft a cover letter", prompt: "Draft a cover letter for a job." },
 ];
+const CHAT_LOGIN_HREF = buildAuthHref("/login", "/chat");
+const CHAT_SIGNUP_HREF = buildAuthHref("/signup", "/chat");
 
 function ThinkingIndicator() {
   return (
@@ -106,19 +112,44 @@ function OptionButtons({ options, onAction }: { options: RicoOption[]; onAction:
 }
 
 export default function ChatPage() {
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [slowHint, setSlowHint] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [chatAudience, setChatAudience] = useState<ChatAudience>("checking");
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const promptSentRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
+    if (USE_MOCK) {
+      setChatAudience("authenticated");
+      return;
+    }
+
+    let cancelled = false;
+    fetchMe()
+      .then((me) => {
+        if (cancelled) return;
+        setChatAudience(me.authenticated ? "authenticated" : "public");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setChatAudience("public");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (chatAudience === "checking" || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const prompt = params.get("prompt");
     if (prompt && !promptSentRef.current) {
@@ -129,13 +160,14 @@ export default function ChatPage() {
       // Greet immediately
       setMessages([{ id: 1, role: "rico", text: "Hi, I'm Rico. Tell me what UAE job you're looking for — role, city, and salary — and I'll find your best matches. You can also upload your CV and I'll set up your profile automatically." }]);
     }
-  }, []);
+  }, [chatAudience]);
 
   function scrollBottom() {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
   }
 
   async function sendMessage(text: string) {
+    if (chatAudience === "checking") return;
     if (text === "__cv_upload__") {
       fileInputRef.current?.click();
       return;
@@ -152,7 +184,10 @@ export default function ChatPage() {
     const slowHintId = setTimeout(() => setSlowHint(true), 5_000);
 
     try {
-      const res: ChatApiResponse = await sendChatPublic(trimmed, getSessionId(), controller.signal);
+      const res: ChatApiResponse =
+        chatAudience === "authenticated"
+          ? await sendChat(trimmed, controller.signal)
+          : await sendChatPublic(trimmed, getSessionId(), controller.signal);
       const reply =
         res.response ??
         res.reply ??
@@ -225,14 +260,17 @@ export default function ChatPage() {
 
   async function handleCVUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || chatAudience === "checking") return;
     e.target.value = "";
     setUploadError("");
     setMessages((prev) => [...prev, { id: nextId(), role: "user", text: `📎 Uploading CV: ${file.name}` }]);
     setThinking(true);
     scrollBottom();
     try {
-      const result: UploadCVResponse = await uploadCV(file);
+      const result: UploadCVResponse =
+        chatAudience === "authenticated"
+          ? await uploadCV(file)
+          : await uploadCV(file, `public:${getSessionId()}`);
       const p = result.parsed;
       const summary = [
         p.skills?.length ? `Skills detected: ${p.skills.slice(0, 6).join(", ")}` : "",
@@ -259,6 +297,11 @@ export default function ChatPage() {
     await sendMessage(text);
   }
 
+  async function handleLogout() {
+    await logout();
+    router.push("/login");
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -272,7 +315,7 @@ export default function ChatPage() {
         <div className="flex max-w-lg flex-col items-center gap-4 rounded-2xl border border-white/5 bg-[#13132a]/80 p-8 text-center backdrop-blur-md">
           <p className="text-sm font-medium text-[#eeeef5]">Session expired.</p>
           <p className="text-sm text-[#5a5a7a]">Sign in again to continue chatting with Rico.</p>
-          <Link href="/login" className="rounded-lg bg-[#5b4fff] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#4a3fe0]">
+          <Link href={CHAT_LOGIN_HREF} className="rounded-lg bg-[#5b4fff] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#4a3fe0]">
             Sign in
           </Link>
         </div>
@@ -295,8 +338,23 @@ export default function ChatPage() {
           Rico<span className="text-[#5b4fff]">.ai</span>
         </Link>
         <div className="flex items-center gap-3">
-          <Link href="/login" className="text-[13px] text-[#5a5a7a] hover:text-white transition-colors">Sign in</Link>
-          <Link href="/signup" className="text-[12px] px-3 py-1.5 rounded-lg bg-[#5b4fff] text-white hover:bg-[#4a3fdf] transition-colors font-medium">Sign up free</Link>
+          {chatAudience === "authenticated" ? (
+            <>
+              <Link href="/dashboard" className="text-[13px] text-[#5a5a7a] hover:text-white transition-colors">Dashboard</Link>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="text-[12px] px-3 py-1.5 rounded-lg bg-[#5b4fff] text-white hover:bg-[#4a3fdf] transition-colors font-medium"
+              >
+                Sign out
+              </button>
+            </>
+          ) : (
+            <>
+              <Link href={CHAT_LOGIN_HREF} className="text-[13px] text-[#5a5a7a] hover:text-white transition-colors">Sign in</Link>
+              <Link href={CHAT_SIGNUP_HREF} className="text-[12px] px-3 py-1.5 rounded-lg bg-[#5b4fff] text-white hover:bg-[#4a3fdf] transition-colors font-medium">Sign up free</Link>
+            </>
+          )}
         </div>
       </header>
 
@@ -322,7 +380,7 @@ export default function ChatPage() {
                 <button
                   key={qa.label}
                   onClick={() => sendMessage(qa.prompt)}
-                  disabled={thinking}
+                  disabled={thinking || chatAudience === "checking"}
                   className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-xs text-[#8080a0] transition-colors hover:border-[rgba(91,79,255,0.3)] hover:bg-white/[0.05] hover:text-[#eeeef5] disabled:opacity-50"
                 >
                   {qa.label}
@@ -399,7 +457,7 @@ export default function ChatPage() {
             {/* CV upload button */}
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={thinking}
+              disabled={thinking || chatAudience === "checking"}
               title="Upload your CV (PDF)"
               className="w-10 h-10 rounded-xl border border-white/10 bg-[#13132a]/80 text-[#8080a0] flex items-center justify-center hover:border-[#5b4fff]/40 hover:text-white transition-all disabled:opacity-30 shrink-0"
               aria-label="Upload CV"
@@ -416,14 +474,16 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={thinking}
+                disabled={thinking || chatAudience === "checking"}
                 rows={1}
-                placeholder="Ask Rico anything — jobs, CV, applications, interviews…"
+                placeholder={chatAudience === "checking"
+                  ? "Checking your session…"
+                  : "Ask Rico anything — jobs, CV, applications, interviews…"}
                 className="w-full resize-none bg-[#13132a]/80 border border-white/10 backdrop-blur-xl rounded-2xl py-3 pl-4 pr-12 text-sm text-white placeholder:text-[#5a5a7a] focus:outline-none focus:border-[#5b4fff]/50 transition-all shadow-2xl"
               />
               <button
                 onClick={handleSend}
-                disabled={thinking || !input.trim()}
+                disabled={thinking || chatAudience === "checking" || !input.trim()}
                 className="absolute right-2 top-1.5 bottom-1.5 w-9 h-9 rounded-xl bg-[#5b4fff] text-white flex items-center justify-center hover:bg-[#4a3fdf] transition-all disabled:opacity-30 disabled:grayscale"
                 aria-label={thinking ? "Sending…" : "Send"}
               >

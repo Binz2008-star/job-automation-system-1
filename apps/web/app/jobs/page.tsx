@@ -5,12 +5,13 @@ import { JobCard } from "@/components/jobs/JobCard";
 import { ToastContainer } from "@/components/ui/Toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/useToast";
-import { ApiError, applyJob, getJobs } from "@/lib/api";
+import { ApiError, applyJob, getJobs, saveJob, skipJob } from "@/lib/api";
 import type { Job } from "@/types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 const SCORE_THRESHOLDS = { HIGH: 85, MID: 65 };
 const SUCCESS_STATUSES = ["applied", "success", "submitted", "saved"];
+const TRACKED_STATUSES = ["saved", "skipped", "already_tracked"];
 
 type Filter = "all" | "high" | "mid";
 
@@ -59,29 +60,60 @@ export default function JobsPage() {
     if (!user || submittingId) return;
     const job = jobs.find((j) => j.job_id === jobId);
     if (!job) return;
-    if (action !== "apply") {
-      toast("Action recorded", "success");
-      return;
-    }
     setSubmittingId(jobId);
+
+    const payload = {
+      job: {
+        link: job.apply_url,
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        score: job.score,
+      },
+    };
+
     try {
-      const result = await applyJob(jobId, {
-        job: {
-          link: job.apply_url,
-          title: job.title,
-          company: job.company,
-          location: job.location,
-          score: job.score,
-        },
-      });
-      if (SUCCESS_STATUSES.includes(String(result.status ?? "").toLowerCase())) {
+      if (action === "apply") {
+        if (!job.apply_url) {
+          throw new Error("This job is missing an apply link.");
+        }
+        const result = await applyJob(jobId, payload);
+        if (!SUCCESS_STATUSES.includes(String(result.status ?? "").toLowerCase())) {
+          throw new Error(result.message || "Manual apply required for this job.");
+        }
         toast("Application submitted ✓", "success");
-        setJobs((prev) => prev.map((j) => (j.job_id === jobId ? { ...j, status: "applied" as const } : j)));
-      } else {
-        toast(result.message || "Manual apply required for this job.", "error");
+        return;
       }
-    } catch {
-      toast("Application failed. Please try again.", "error");
+
+      if (action === "save") {
+        const result = await saveJob(jobId, payload);
+        if (!TRACKED_STATUSES.includes(String(result.status ?? "").toLowerCase())) {
+          throw new Error(result.message || "Could not save this job.");
+        }
+        toast(
+          result.status === "already_tracked" ? "Job was already tracked" : "Job saved ✓",
+          "success"
+        );
+        return;
+      }
+
+      if (action === "ignore") {
+        const result = await skipJob(jobId, payload);
+        if (!TRACKED_STATUSES.includes(String(result.status ?? "").toLowerCase())) {
+          throw new Error(result.message || "Could not ignore this job.");
+        }
+        toast(
+          result.status === "already_tracked" ? "Job was already tracked" : "Job ignored ✓",
+          "success"
+        );
+        setJobs((prev) => prev.filter((item) => item.job_id !== jobId));
+        return;
+      }
+
+      throw new Error(`Unsupported job action: ${action}`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Action failed. Please try again.", "error");
+      throw err;
     } finally {
       setSubmittingId(null);
     }

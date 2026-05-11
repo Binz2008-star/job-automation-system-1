@@ -1,9 +1,10 @@
 "use client";
 
-import { submitOnboarding, uploadCV, type OnboardingPayload, type ParsedCV } from "@/lib/api";
+import { fetchMe, submitOnboarding, uploadCV, type OnboardingPayload, type ParsedCV } from "@/lib/api";
+import { buildAuthHref } from "@/lib/redirect";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 // ── Missing-fields form config ────────────────────────────────────────────────
 
@@ -95,13 +96,49 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 type PageState = "upload" | "parsing" | "form" | "submitting" | "done" | "error";
+type AuthState = "checking" | "ready";
+
+function isAuthFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.includes("401") || /not authenticated|expired/i.test(message);
+}
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const [authState, setAuthState] = useState<AuthState>("checking");
   const [pageState, setPageState] = useState<PageState>("upload");
   const [parsed, setParsed] = useState<ParsedCV | null>(null);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [errorMsg, setErrorMsg] = useState("");
+  const signUpHref = buildAuthHref("/signup", "/onboarding");
+  const loginHref = buildAuthHref("/login", "/onboarding");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchMe()
+      .then((me) => {
+        if (cancelled) return;
+        if (!me.authenticated) {
+          router.replace(signUpHref);
+          return;
+        }
+        setAuthState("ready");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if (isAuthFailure(err)) {
+          router.replace(signUpHref);
+          return;
+        }
+        setErrorMsg("Could not verify your session. Please refresh or sign in again.");
+        setAuthState("ready");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router, signUpHref]);
 
   const handleFile = useCallback(async (file: File) => {
     if (file.type !== "application/pdf") {
@@ -122,10 +159,14 @@ export default function OnboardingPage() {
       }
       setPageState("form");
     } catch (err) {
+      if (isAuthFailure(err)) {
+        router.replace(loginHref);
+        return;
+      }
       setErrorMsg(err instanceof Error ? err.message : "Upload failed. Please try again.");
       setPageState("upload");
     }
-  }, []);
+  }, [loginHref, router]);
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -159,10 +200,27 @@ export default function OnboardingPage() {
       await submitOnboarding(payload);
       setPageState("done");
     } catch (err) {
+      if (isAuthFailure(err)) {
+        router.replace(loginHref);
+        return;
+      }
       setErrorMsg(err instanceof Error ? err.message : "Could not save your profile. Please try again.");
       setPageState("form");
     }
-  }, [fieldValues]);
+  }, [fieldValues, loginHref, router]);
+
+  if (authState === "checking") {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-[#06060f] px-4 relative overflow-hidden">
+        <AmbientGlow />
+
+        <div className="relative z-10 flex flex-col items-center w-full">
+          <BrandHeader />
+          <SpinnerCard label="Checking your session…" />
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-[#06060f] px-4 relative overflow-hidden">

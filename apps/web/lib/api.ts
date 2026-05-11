@@ -348,6 +348,20 @@ export async function applyJob(
   });
 }
 
+export async function saveJob(
+  jobId: string,
+  payload: JobActionRequest
+): Promise<JobActionResponse> {
+  if (USE_MOCK) {
+    return { status: "saved", message: "Job saved", job_id: jobId };
+  }
+
+  return requestJson<JobActionResponse>(`/api/v1/jobs/${jobId}/save`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function skipJob(
   jobId: string,
   payload: JobActionRequest
@@ -652,10 +666,13 @@ function extractDetail(detail: unknown, fallback: string): string {
   return fallback;
 }
 
-export async function uploadCV(file: File): Promise<UploadCVResponse> {
+export async function uploadCV(
+  file: File,
+  userId?: string
+): Promise<UploadCVResponse> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${PROXY}/api/v1/rico/upload-cv`, {
+  const res = await fetch(buildProxyUrl("/api/v1/rico/upload-cv", userId ? { user_id: userId } : undefined), {
     method: "POST",
     credentials: "include",
     body: form,

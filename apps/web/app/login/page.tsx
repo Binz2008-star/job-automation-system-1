@@ -1,9 +1,10 @@
 "use client";
 
 import { login } from "@/lib/api";
+import { buildAuthHref, resolveNextPath } from "@/lib/redirect";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,6 +12,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [requestedNext, setRequestedNext] = useState("");
+  const nextPath = requestedNext || "/dashboard";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    setRequestedNext(resolveNextPath(params.get("next"), ""));
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -18,7 +27,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      router.push("/dashboard");
+      router.push(nextPath);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -111,7 +120,10 @@ export default function LoginPage() {
 
         <p className="mt-5 text-center text-xs text-[#5a5a7a]">
           No account yet?{" "}
-          <Link href="/signup" className="text-[#a78bfa] hover:text-[#c4b5fd] transition-colors">
+          <Link
+            href={buildAuthHref("/signup", requestedNext)}
+            className="text-[#a78bfa] hover:text-[#c4b5fd] transition-colors"
+          >
             Create one free →
           </Link>
         </p>

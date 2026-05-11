@@ -76,6 +76,13 @@ def skip_job(job: Dict[str, Any]) -> bool:
     return mark_applied(job, status="decision_made", notes="Skipped via API")
 
 
+def save_job(job: Dict[str, Any]) -> bool:
+    """Mark saved. Returns True if newly persisted, False if already tracked."""
+    if is_applied(job):
+        return False
+    return mark_applied(job, status="saved", notes="Saved via API")
+
+
 def block_company(job: Dict[str, Any]) -> str:
     """
     Block all future results from this company (session scope).
