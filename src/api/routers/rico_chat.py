@@ -134,13 +134,17 @@ def rico_openai_smoke(request: Request) -> Dict[str, Any]:
 
     provider = get_ai_provider()
 
-    if provider == "none":
-        # Free mode - don't call OpenAI
+    if provider in ("none", "huggingface"):
+        # OpenAI is not the active provider — skip the live API call
+        from src.rico_openai_agent import RicoOpenAIAgent
+
+        agent = RicoOpenAIAgent()
         return {
             "success": False,
-            "provider": "none",
+            "provider": provider,
             "openai_available": False,
-            "response": "OpenAI provider disabled. Set RICO_AI_PROVIDER=openai when API credits are available.",
+            "hf_available": agent.hf_available,
+            "response": f"OpenAI provider disabled (active provider: {provider}). Set RICO_AI_PROVIDER=openai when API credits are available.",
             "error": "OpenAIProviderDisabled",
             "error_detail": None,
             "model": None,

@@ -29,7 +29,7 @@ OPENAI_PRIMARY_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_FALLBACK_MODEL = os.getenv("OPENAI_FALLBACK_MODEL", "gpt-4.1-mini")
 
 _FALLBACK_TEXT = (
-    "I understood. I can still help while the AI reasoning layer is being configured."
+    "Free mode is active. Rico can help set up your profile and guide your job search using free AI/fallback."
 )
 _PROFILE_CONTEXT_MAX_CHARS = 1200
 _SMOKE_MAX_OUTPUT_TOKENS = 80

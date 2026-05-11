@@ -41,13 +41,15 @@ def _stub_active_user(monkeypatch, profile):
     monkeypatch.setattr("src.rico_chat_api.get_profile", lambda _u: profile)
 
 
-def _assert_metadata(resp, *, source, openai_available, profile_present):
+def _assert_metadata(resp, *, source, openai_available, profile_present, hf_available=None):
     """Common shape check: every chat reply must carry the diagnostic fields."""
     assert resp["response_source"] == source, (
         f"expected response_source={source!r}, got {resp.get('response_source')!r}"
     )
     assert resp["openai_available"] is openai_available
     assert resp["profile_context_present"] is profile_present
+    if hf_available is not None:
+        assert resp["hf_available"] is hf_available
     # Model name is informational only; never the key.
     assert isinstance(resp["openai_model"], str) and resp["openai_model"]
     assert "sk-" not in resp["openai_model"], "model field must never carry a key prefix"
@@ -101,21 +103,25 @@ def test_openai_branch_reports_openai_source(chat_api, monkeypatch):
 
 
 def test_missing_key_reports_fallback_source(chat_api, monkeypatch):
-    """With OPENAI_API_KEY unset the real agent's templated fallback must report fallback."""
+    """With OPENAI_API_KEY unset and no HF key the real agent's templated fallback must report fallback."""
     profile = {"user_id": "carol@rico.ai", "target_roles": ["HSE Officer"]}
     _stub_active_user(monkeypatch, profile)
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPEN_AI_API", raising=False)
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HF_API_KEY", raising=False)
+    monkeypatch.delenv("HUGGINGFACE_API_KEY", raising=False)
 
     from src.rico_openai_agent import RicoOpenAIAgent
 
     chat_api.openai_agent = RicoOpenAIAgent()
     assert chat_api.openai_agent.available is False
+    assert chat_api.openai_agent.hf_available is False
 
     resp = chat_api._handle_active_user("carol@rico.ai", "tell me about the market")
 
-    _assert_metadata(resp, source="fallback", openai_available=False, profile_present=True)
+    _assert_metadata(resp, source="fallback", openai_available=False, profile_present=True, hf_available=False)
     assert resp["type"] == "fallback_response"
 
 

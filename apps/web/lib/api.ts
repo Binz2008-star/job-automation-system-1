@@ -16,6 +16,8 @@ export interface RicoStatus {
   ready_for_telegram: boolean;
   ready_for_openai: boolean;
   ready_for_jotform: boolean;
+  ready_for_hf: boolean;
+  ai_provider: string;
 }
 
 export interface HealthResponse {
@@ -182,7 +184,9 @@ export interface ChatApiResponse {
   content?: string;
   answer?: string;
   response_source?: string;
+  provider?: string;
   openai_available?: boolean;
+  hf_available?: boolean;
   data?: {
     response?: string;
     reply?: string;

@@ -4,14 +4,36 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── GET /health ───────────────────────────────────────────────────────────────
+export interface RicoStatus {
+  ready_for_api?: boolean;
+  ready_for_db?: boolean;
+  ready_for_telegram?: boolean;
+  ready_for_openai?: boolean;
+  ready_for_jotform?: boolean;
+  ready_for_hf?: boolean;
+  ai_provider?: string;
+}
+
 export interface HealthResponse {
-  status: "ok" | "degraded" | "error";
-  service: string;
-  environment: string;
-  database: string;
-  openai: boolean;
-  telegram: boolean;
-  version: string;
+  status: "ok" | "healthy" | "degraded" | "error";
+  service?: string;
+  environment?: string;
+  database?: string;
+  db?: string;
+  openai?: boolean;
+  telegram?: boolean;
+  version?: string;
+
+  // AI provider status (top-level)
+  ready_for_openai?: boolean;
+  ready_for_hf?: boolean;
+  ready_for_jotform?: boolean;
+  ai_provider?: "openai" | "huggingface" | "fallback" | "none" | string;
+
+  // Nested rico status
+  rico?: RicoStatus;
+
+  endpoints?: Record<string, string>;
 }
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────

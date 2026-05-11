@@ -68,24 +68,29 @@ def test_open_ended_message_calls_openai_agent(chat_api, monkeypatch):
 
 
 def test_missing_openai_key_returns_safe_fallback(chat_api, monkeypatch):
-    """When OPENAI_API_KEY is not configured, the agent's built-in fallback fires."""
+    """When OPENAI_API_KEY is not configured and no HF key, the agent's built-in fallback fires."""
     profile = {"user_id": "bob@rico.ai", "target_roles": ["HSE Officer"]}
     _stub_active_user(monkeypatch, profile)
 
-    # Simulate: RicoOpenAIAgent with no key. Patch both env var names to be safe.
+    # Simulate: RicoOpenAIAgent with no key. Patch all env var names to be safe.
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPEN_AI_API", raising=False)
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HF_API_KEY", raising=False)
+    monkeypatch.delenv("HUGGINGFACE_API_KEY", raising=False)
 
     from src.rico_openai_agent import RicoOpenAIAgent
 
     chat_api.openai_agent = RicoOpenAIAgent()
     assert chat_api.openai_agent.available is False, "Agent must report unavailable without key"
+    assert chat_api.openai_agent.hf_available is False, "Agent must report no HF without key"
 
     result = chat_api._handle_active_user("bob@rico.ai", "what's the next step?")
 
     assert "message" in result, "Fallback must still return a 'message' field"
     assert result["message"], "Fallback message must not be empty"
     assert result["type"] == "fallback_response"
+    assert result.get("provider") == "fallback"
 
 
 # ── 3. Profile context is passed into the OpenAI agent ────────────────────────

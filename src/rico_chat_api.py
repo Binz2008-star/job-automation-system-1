@@ -65,17 +65,23 @@ class RicoChatAPI:
     # secrets — only this label, the model name, and presence booleans.
     SOURCE_KEYWORD = "keyword"
     SOURCE_OPENAI = "openai"
+    SOURCE_HF = "huggingface"
     SOURCE_FALLBACK = "fallback"
 
     @staticmethod
     def _source_for_openai_response(response: Dict[str, Any]) -> str:
-        """Map a RicoOpenAIAgent response to ``keyword`` / ``openai`` / ``fallback``.
+        """Map a RicoOpenAIAgent response to the correct source label.
 
-        Only a successful ``openai_response`` from the API counts as ``openai``.
-        Missing-key, exception fallback, and safety refusals are all reported
-        as ``fallback`` so the diagnostic field stays binary on the OpenAI side.
+        openai_response → ``openai``
+        hf_response     → ``huggingface``
+        everything else → ``fallback``
         """
-        return RicoChatAPI.SOURCE_OPENAI if response.get("type") == "openai_response" else RicoChatAPI.SOURCE_FALLBACK
+        rtype = response.get("type")
+        if rtype == "openai_response":
+            return RicoChatAPI.SOURCE_OPENAI
+        if rtype == "hf_response":
+            return RicoChatAPI.SOURCE_HF
+        return RicoChatAPI.SOURCE_FALLBACK
 
     def _finalize(
         self,
@@ -87,8 +93,10 @@ class RicoChatAPI:
         """Return a copy of ``response`` with safe diagnostic metadata attached.
 
         Adds:
-          * ``response_source``  — keyword | openai | fallback
+          * ``response_source``  — keyword | openai | huggingface | fallback
+          * ``provider``         — openai | huggingface | fallback
           * ``openai_available`` — whether OPENAI_API_KEY (or legacy OPEN_AI_API) is set
+          * ``hf_available``     — whether HF_API_KEY / HF_TOKEN / HUGGINGFACE_API_KEY is set
           * ``openai_model``     — model name only, never the key
           * ``profile_context_present`` — whether a loaded profile was available
 
@@ -99,7 +107,9 @@ class RicoChatAPI:
         return {
             **response,
             "response_source": source,
+            "provider": response.get("provider", source),
             "openai_available": self.openai_agent.available,
+            "hf_available": self.openai_agent.hf_available,
             "openai_model": self.openai_agent.model,
             "profile_context_present": profile is not None,
         }

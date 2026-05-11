@@ -11,6 +11,39 @@ from typing import Any, Dict
 logger = logging.getLogger(__name__)
 
 
+def _is_browser_unavailable(exc: Exception) -> bool:
+    """Detect Playwright / browser-launch errors that should surface as 'manual_required'."""
+    msg = str(exc).lower()
+    return any(
+        phrase in msg
+        for phrase in (
+            "playwright install",
+            "browser type",
+            "chromium",
+            "executable",
+            "browser not found",
+            "executable doesn't exist",
+            "browser.launch",
+            "failed to launch",
+        )
+    )
+
+
+def _clean_apply_error(exc: Exception) -> Dict[str, str]:
+    """Return a user-facing message. Log raw technical detail server-side only."""
+    if _is_browser_unavailable(exc):
+        logger.warning("browser_unavailable: %s", exc)
+        return {
+            "status": "manual_required",
+            "message": "Manual apply required. Browser automation is unavailable for this job.",
+        }
+    logger.exception("apply_failed")
+    return {
+        "status": "error",
+        "message": "Application failed. Please try again or apply manually.",
+    }
+
+
 def apply_to_job(job: Dict[str, Any]) -> Dict[str, str]:
     """
     Trigger automated application for a job.
@@ -57,8 +90,7 @@ def _apply_naukrigulf(job: Dict[str, Any]) -> Dict[str, str]:
             "job_id": result.job_id or "",
         }
     except Exception as exc:
-        logger.exception("naukrigulf_apply_failed")
-        return {"status": "error", "message": str(exc)}
+        return _clean_apply_error(exc)
 
 
 def _apply_indeed(job: Dict[str, Any]) -> Dict[str, str]:
@@ -73,5 +105,4 @@ def _apply_indeed(job: Dict[str, Any]) -> Dict[str, str]:
             "job_id": result.job_id,
         }
     except Exception as exc:
-        logger.exception("indeed_apply_failed")
-        return {"status": "error", "message": str(exc)}
+        return _clean_apply_error(exc)

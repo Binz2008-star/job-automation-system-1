@@ -193,13 +193,24 @@ export default function ProfilePage() {
               <p className="mb-4 text-sm text-[#5a5a7a]">
                 Rico builds your profile through a short conversation. Tell it your
                 target role, experience, location, and salary range to get started.
+                You can also use the Quick Start form if you prefer.
               </p>
-              <Link
-                href="/chat"
-                className="inline-block rounded-lg bg-[#5b4fff] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#4a3fe0]"
-              >
-                Start setup with Rico →
-              </Link>
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href="/chat"
+                  className="inline-block rounded-lg bg-[#5b4fff] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#4a3fe0]"
+                >
+                  Start setup with Rico →
+                </Link>
+                <a
+                  href="https://form.jotform.com/261278237812056"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-5 py-2.5 text-sm font-medium text-[#8080a0] transition-colors hover:text-[#eeeef5] hover:border-[rgba(255,255,255,0.15)]"
+                >
+                  Quick Start form →
+                </a>
+              </div>
             </StatusCard>
 
             <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#13132a]/60 p-5">

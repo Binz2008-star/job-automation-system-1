@@ -26,17 +26,11 @@ const QUICK_ACTIONS = [
 
 function ThinkingIndicator() {
   return (
-    <div className="flex justify-start">
-      <div className="rounded-2xl rounded-bl-sm bg-[#13132a] border border-[rgba(255,255,255,0.06)] px-4 py-3">
-        <div className="flex items-center gap-1">
-          {[0, 1, 2].map((i) => (
-            <span
-              key={i}
-              className="h-1.5 w-1.5 rounded-full bg-[#5a5a7a] animate-bounce"
-              style={{ animationDelay: `${i * 0.15}s` }}
-            />
-          ))}
-        </div>
+    <div className="flex justify-start animate-pulse">
+      <div className="bg-[#13132a] border border-white/5 rounded-2xl rounded-tl-none px-4 py-4 flex gap-1.5 items-center backdrop-blur-md">
+        <span className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce [animation-duration:0.8s]" />
+        <span className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.2s]" />
+        <span className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.4s]" />
       </div>
     </div>
   );
@@ -86,14 +80,16 @@ export default function ChatPage() {
         res.data?.message ??
         res.data?.content ??
         "";
-      const freeMode = res.response_source === "free_mode" || res.openai_available === false;
+      const provider = res.provider ?? res.response_source ?? "unknown";
+      const freeMode = provider === "fallback" || provider === "none" || res.openai_available === false;
+      const hfMode = provider === "huggingface" || provider === "hf";
       if (!reply) {
         setMessages((prev) => [
           ...prev,
           { id: nextId(), role: "rico", text: "Rico returned an empty response. Please try again." },
         ]);
       } else {
-        setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: reply, freeMode }]);
+        setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: reply, freeMode: freeMode && !hfMode }]);
       }
     } catch (err) {
       if (err instanceof Error && err.message.includes("401")) {
@@ -128,7 +124,7 @@ export default function ChatPage() {
   if (sessionExpired) {
     return (
       <DashboardShell title="Chat">
-        <div className="flex max-w-lg flex-col items-center gap-4 rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[#13132a]/80 p-8 text-center">
+        <div className="flex max-w-lg flex-col items-center gap-4 rounded-2xl border border-white/5 bg-[#13132a]/80 p-8 text-center backdrop-blur-md">
           <p className="text-sm font-medium text-[#eeeef5]">Session expired.</p>
           <p className="text-sm text-[#5a5a7a]">Sign in again to continue chatting with Rico.</p>
           <Link
@@ -145,134 +141,116 @@ export default function ChatPage() {
   const isEmpty = messages.length === 0 && !thinking;
 
   return (
-    <DashboardShell title="Chat">
-      <div className="flex max-w-2xl flex-col gap-3 h-[calc(100dvh-13rem)] md:h-[calc(100dvh-11rem)]">
-        {/* Message area */}
-        <div className="flex flex-1 flex-col overflow-y-auto rounded-2xl border border-[rgba(255,255,255,0.06)] bg-[#0d0d1f]/40 p-4">
-
-          {/* Empty / onboarding state */}
+    <DashboardShell title="Rico Assistant">
+      <div className="flex flex-col h-[calc(100vh-200px)] max-w-4xl mx-auto relative overflow-hidden">
+        {/* Messages Container */}
+        <div className="flex-1 overflow-y-auto px-2 py-4 space-y-6 pb-28 scrollbar-hide">
           {isEmpty && (
-            <div className="flex flex-1 flex-col justify-between gap-6">
-              {/* Greeting */}
-              <div className="flex flex-col items-center gap-4 pt-4 text-center">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#5b4fff] to-[#8b5cf6] flex items-center justify-center text-xl font-black text-white shadow-[0_4px_16px_rgba(91,79,255,0.3)]">
-                  R
-                </div>
-                <div>
-                  <p className="font-['Cabinet_Grotesk',sans-serif] font-700 text-[18px] text-[#eeeef5]">
-                    Hello. I&apos;m Rico.
-                  </p>
-                  <p className="max-w-sm text-[13px] text-[#5a5a7a] mt-1.5 leading-relaxed">
-                    Your AI job-search assistant for the UAE. Tell me your target role, preferred location, salary expectations, and key skills — I&apos;ll build your profile from our conversation.
-                  </p>
+            <div className="flex flex-col items-center justify-center h-full text-center opacity-30 py-20 animate-in fade-in duration-500">
+              <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4 border border-white/5 shadow-[0_4px_16px_rgba(91,79,255,0.1)]">
+                <span className="text-2xl">🤖</span>
+              </div>
+              <h3 className="font-['Cabinet_Grotesk',sans-serif] font-bold text-lg text-white">Rico is ready</h3>
+              <p className="text-sm max-w-xs mt-2 text-[#8080a0]">Ask about your profile, UAE job trends, or application status.</p>
+
+              {/* Quick actions */}
+              <div className="mt-8">
+                <p className="mb-3 text-[11px] font-bold uppercase tracking-widest text-[#5a5a7a]">Quick start</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {QUICK_ACTIONS.map((qa) => (
+                    <button
+                      key={qa.label}
+                      onClick={() => sendMessage(qa.prompt)}
+                      disabled={thinking}
+                      className="rounded-lg border border-white/8 bg-white/[0.03] px-3 py-2 text-xs text-[#8080a0] transition-colors hover:border-[rgba(91,79,255,0.3)] hover:bg-white/[0.05] hover:text-[#eeeef5] disabled:opacity-50"
+                    >
+                      {qa.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              <div className="flex flex-col gap-4">
-                {/* Quick action chips */}
-                <div>
-                  <p className="mb-2.5 text-center text-xs text-[#5a5a7a]">Quick start</p>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    {QUICK_ACTIONS.map((qa) => (
-                      <button
-                        key={qa.label}
-                        onClick={() => sendMessage(qa.prompt)}
-                        disabled={thinking}
-                        className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3 py-2 text-xs text-[#8080a0] transition-colors hover:border-[rgba(91,79,255,0.3)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[#eeeef5] disabled:opacity-50"
-                      >
-                        {qa.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* How Rico works panel */}
-                <div className="rounded-lg border border-[rgba(255,255,255,0.06)] bg-[rgba(255,255,255,0.02)] px-4 py-3">
-                  <p className="mb-1.5 text-xs font-medium text-[#8080a0]">How Rico works</p>
-                  <ul className="flex flex-col gap-1 text-xs text-[#5a5a7a]">
-                    <li>· Tell Rico your target role, cities, salary range, and skills — it saves them to your profile.</li>
-                    <li>· Once your profile is set, Rico searches jobs daily and scores them against your preferences.</li>
-                    <li>· Profile setup happens through this chat. No forms or uploads needed to get started.</li>
-                  </ul>
-                  <p className="mt-2 text-xs text-[#5a5a7a]">
-                    CV upload will be added when the upload endpoint is connected.
-                  </p>
-                </div>
+              {/* How Rico works */}
+              <div className="mt-6 max-w-sm rounded-lg border border-white/5 bg-white/[0.02] px-4 py-3 text-left">
+                <p className="mb-1.5 text-xs font-medium text-[#8080a0]">How Rico works</p>
+                <ul className="flex flex-col gap-1 text-xs text-[#5a5a7a]">
+                  <li>· Tell Rico your target role, cities, salary, and skills — it saves them to your profile.</li>
+                  <li>· Once your profile is set, Rico searches jobs daily and scores them against your preferences.</li>
+                  <li>· Profile setup happens through this chat. No forms needed to get started.</li>
+                </ul>
               </div>
             </div>
           )}
 
           {/* Messages */}
-          <div className="flex flex-col gap-3">
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className={`flex items-end gap-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}
-              >
-                {m.role === "rico" && (
-                  <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#5b4fff] to-[#8b5cf6] flex items-center justify-center text-[10px] font-black text-white shrink-0 mb-1">
-                    R
-                  </div>
-                )}
-                <div
-                  className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${m.role === "user"
-                    ? "rounded-br-sm bg-[#5b4fff] text-white"
-                    : "rounded-bl-sm bg-[#13132a] border border-[rgba(255,255,255,0.06)] text-[#eeeef5]"
-                    }`}
-                >
-                  {m.text}
-                  {m.freeMode && (
-                    <p className="mt-1.5 text-[11px] text-[#5a5a7a]">
-                      Free mode — OpenAI unavailable
-                    </p>
-                  )}
+          {messages.map((m) => (
+            <div
+              key={m.id}
+              className={`flex items-end gap-2 animate-in fade-in slide-in-from-bottom-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              {m.role === "rico" && (
+                <div className="w-6 h-6 rounded-md bg-gradient-to-br from-[#5b4fff] to-[#8b5cf6] flex items-center justify-center text-[10px] font-black text-white shrink-0 mb-1 shadow-[0_2px_8px_rgba(91,79,255,0.3)]">
+                  R
                 </div>
-                {m.role === "user" && (
-                  <div className="w-6 h-6 rounded-full bg-[rgba(255,255,255,0.08)] flex items-center justify-center text-[10px] font-medium text-[#8080a0] shrink-0 mb-1">
-                    You
-                  </div>
+              )}
+              <div
+                className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-[15px] leading-relaxed shadow-sm ${m.role === "user"
+                  ? "rounded-tr-none bg-[#5b4fff] text-white shadow-[0_4px_15px_rgba(91,79,255,0.2)]"
+                  : "rounded-tl-none bg-[#13132a] border border-white/5 text-[#eeeef5] backdrop-blur-md"
+                  }`}
+              >
+                {m.text}
+                {m.freeMode && (
+                  <p className="mt-1.5 text-[11px] text-[#5a5a7a]">
+                    Free mode — AI fallback active
+                  </p>
                 )}
               </div>
-            ))}
+              {m.role === "user" && (
+                <div className="w-6 h-6 rounded-full bg-white/[0.08] flex items-center justify-center text-[10px] font-medium text-[#8080a0] shrink-0 mb-1">
+                  You
+                </div>
+              )}
+            </div>
+          ))}
 
-            {thinking && <ThinkingIndicator />}
+          {thinking && <ThinkingIndicator />}
 
-            <div ref={bottomRef} />
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input — Rico Floating Glass */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#06060f] via-[#06060f]/90 to-transparent">
+          <div className="relative group">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={thinking}
+              rows={1}
+              placeholder="Ask Rico anything..."
+              className="w-full resize-none bg-[#13132a]/80 border border-white/10 backdrop-blur-xl rounded-2xl py-4 pl-5 pr-14 text-sm text-white placeholder:text-[#5a5a7a] focus:outline-none focus:border-[#5b4fff]/50 transition-all shadow-2xl"
+            />
+            <button
+              onClick={handleSend}
+              disabled={thinking || !input.trim()}
+              className="absolute right-2 top-2 bottom-2 w-10 h-10 rounded-xl bg-[#5b4fff] text-white flex items-center justify-center hover:bg-[#4a3fdf] transition-all disabled:opacity-30 disabled:grayscale"
+              aria-label={thinking ? "Sending…" : "Send message"}
+            >
+              {thinking ? (
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                </svg>
+              )}
+            </button>
           </div>
+          <p className="text-center text-[10px] text-[#5a5a7a] mt-2 uppercase tracking-widest font-bold opacity-50">
+            Enter to send · Shift+Enter for new line
+          </p>
         </div>
-
-        {/* Input */}
-        <div className="flex gap-2">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={thinking}
-            rows={1}
-            placeholder="Message Rico…"
-            className="flex-1 resize-none rounded-xl border border-[rgba(255,255,255,0.08)] bg-[#0d0d1f] px-4 py-3 text-sm text-[#eeeef5] placeholder-[#5a5a7a] focus:border-[rgba(91,79,255,0.4)] focus:outline-none focus:ring-1 focus:ring-[rgba(91,79,255,0.2)] disabled:opacity-50"
-          />
-          <button
-            onClick={handleSend}
-            disabled={thinking || !input.trim()}
-            className="shrink-0 rounded-xl bg-[#5b4fff] px-4 py-3 text-white transition-colors hover:bg-[#4a3fe0] disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center"
-            aria-label={thinking ? "Sending…" : "Send message"}
-          >
-            {thinking ? (
-              <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 2L11 13" />
-                <path d="M22 2l-7 20-4-9-9-4 20-7z" />
-              </svg>
-            )}
-          </button>
-        </div>
-
-        <p className="text-center text-xs text-[#5a5a7a]">
-          Enter to send · Shift+Enter for new line
-        </p>
       </div>
     </DashboardShell>
   );
