@@ -9,6 +9,18 @@ import type {
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
+// Legacy status aliases from older data imports — normalize to canonical values
+const STATUS_ALIASES: Record<string, ApplicationStatus> = {
+  interview_scheduled: "interview",
+  offer_extended: "offer",
+};
+
+function normalizeStatus(raw: string): ApplicationStatus {
+  if (STATUS_ALIASES[raw]) return STATUS_ALIASES[raw];
+  // Cast to ApplicationStatus; if invalid, downstream UI will treat as unknown
+  return raw as ApplicationStatus;
+}
+
 const MOCK_APPS: Application[] = [
   {
     application_id: "app_001",
@@ -81,7 +93,7 @@ export async function getApplications(
       title: (item.title ?? "Untitled role") as string,
       company: (item.company ?? "Unknown company") as string,
       location: (item.location ?? "Remote / unspecified") as string,
-      status: (item.status ?? "applied") as ApplicationStatus,
+      status: normalizeStatus(item.status ?? "applied"),
       applied_at: (item.applied_at ?? item.date_applied ?? "") as string,
       updated_at: (item.updated_at ?? item.date_updated ?? "") as string,
       notes: (item.notes ?? "") as string,
@@ -131,5 +143,13 @@ export async function getApplicationStats(): Promise<Record<string, number>> {
   const { data } = await api.get<Record<string, number>>(
     "/api/applications/stats"
   );
-  return data;
+
+  // Apply status aliases normalization for consistency with application list
+  const normalized: Record<string, number> = {};
+  for (const [key, value] of Object.entries(data)) {
+    const normalizedKey = STATUS_ALIASES[key] || key;
+    normalized[normalizedKey] = (normalized[normalizedKey] || 0) + value;
+  }
+
+  return normalized;
 }

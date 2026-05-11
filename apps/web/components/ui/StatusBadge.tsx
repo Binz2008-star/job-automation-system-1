@@ -1,8 +1,10 @@
 import { cn } from "@/lib/utils";
 import type { ApplicationStatus } from "@/types";
 
+// Legacy aliases included so imported/legacy data renders correctly.
+// Backend canonical values: saved, opened, applied, interview, rejected, offer, decision_made
 const config: Record<
-  ApplicationStatus,
+  ApplicationStatus | "interview_scheduled" | "offer_extended",
   { label: string; className: string }
 > = {
   applied: {
@@ -15,7 +17,19 @@ const config: Record<
     className:
       "text-[#00c9a7] bg-[rgba(0,201,167,0.08)] border-[rgba(0,201,167,0.2)]",
   },
+  // Legacy alias
+  interview_scheduled: {
+    label: "Interview",
+    className:
+      "text-[#00c9a7] bg-[rgba(0,201,167,0.08)] border-[rgba(0,201,167,0.2)]",
+  },
   offer: {
+    label: "Offer",
+    className:
+      "text-amber-300 bg-amber-400/10 border-amber-400/20",
+  },
+  // Legacy alias
+  offer_extended: {
     label: "Offer",
     className:
       "text-amber-300 bg-amber-400/10 border-amber-400/20",
@@ -39,8 +53,15 @@ const config: Record<
   },
 };
 
+// Unknown status fallback — displays as "Unknown" with neutral styling
+const UNKNOWN_CONFIG = {
+  label: "Unknown",
+  className: "text-white/30 bg-white/4 border-white/10",
+};
+
 export function StatusBadge({ status }: { status: ApplicationStatus }) {
-  const { label, className } = config[status] ?? config.applied;
+  const { label, className } =
+    config[status as keyof typeof config] ?? UNKNOWN_CONFIG;
   return (
     <span
       className={cn(
