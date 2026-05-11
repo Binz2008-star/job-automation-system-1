@@ -40,6 +40,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
+  const [slowHint, setSlowHint] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -68,7 +69,8 @@ export default function ChatPage() {
     scrollBottom();
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30_000);
+    const timeoutId = setTimeout(() => controller.abort(), 45_000);
+    const slowHintId = setTimeout(() => setSlowHint(true), 5_000);
 
     try {
       const res: ChatApiResponse = await sendChat(trimmed, controller.signal);
@@ -99,7 +101,7 @@ export default function ChatPage() {
         if (err.name === "AbortError") {
           setMessages((prev) => [
             ...prev,
-            { id: nextId(), role: "rico", text: "Rico took too long to respond. Please try again." },
+            { id: nextId(), role: "rico", text: "Rico is taking longer than usual — this happens after a period of inactivity while the server wakes up. Please try again in 30 seconds." },
           ]);
           return;
         }
@@ -121,6 +123,8 @@ export default function ChatPage() {
       ]);
     } finally {
       clearTimeout(timeoutId);
+      clearTimeout(slowHintId);
+      setSlowHint(false);
       setThinking(false);
       scrollBottom();
       textareaRef.current?.focus();
@@ -234,7 +238,16 @@ export default function ChatPage() {
             </div>
           ))}
 
-          {thinking && <ThinkingIndicator />}
+          {thinking && (
+            <div className="flex flex-col gap-2">
+              <ThinkingIndicator />
+              {slowHint && (
+                <p className="text-[11px] text-[#5a5a7a] pl-1 animate-pulse">
+                  Rico is waking up — first request after idle can take up to a minute…
+                </p>
+              )}
+            </div>
+          )}
 
           <div ref={bottomRef} />
         </div>
