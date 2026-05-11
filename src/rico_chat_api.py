@@ -17,6 +17,7 @@ from src.rico_agent import RicoAgent
 from src.rico_memory import RicoMemoryStore
 from src.rico_openai_agent import RicoOpenAIAgent
 from src.rico_repo_adapter import RicoSystem
+from src.rico_match_explanation import build_match_explanation
 from src.repositories.onboarding_repo import (
     is_onboarding_complete,
     mark_onboarding_complete,
@@ -256,17 +257,45 @@ class RicoChatAPI:
 
         workflow_result = self.system.run_for_profile(profile)
         top_matches = workflow_result.get("matches", [])[:5]
-        formatted = [
-            {
+
+        # Build profile dict for explanation builder
+        profile_dict = {}
+        if profile:
+            if isinstance(profile, dict):
+                profile_dict = profile
+            else:
+                try:
+                    from dataclasses import asdict, is_dataclass
+                    profile_dict = asdict(profile) if is_dataclass(profile) else dict(profile)
+                except Exception:
+                    profile_dict = {}
+
+        formatted = []
+        for m in top_matches:
+            job_dict = {
+                "title": m.get("title"),
+                "company": m.get("company"),
+                "location": m.get("location"),
+                "description": m.get("description", ""),
+                "salary": m.get("salary") or m.get("salary_range"),
+            }
+
+            # Generate structured match explanation
+            explanation = build_match_explanation(job_dict, profile_dict)
+
+            formatted.append({
                 "title": m.get("title"),
                 "company": m.get("company"),
                 "location": m.get("location"),
                 "score": m.get("rico_score"),
                 "why": m.get("rico_explanation"),
-                "actions": ["Apply", "Save", "Skip", "Why this?", "Draft", "Remind me"],
-            }
-            for m in top_matches
-        ]
+                "match_reasons": explanation.get("match_reasons", []),
+                "match_concerns": explanation.get("match_concerns", []),
+                "missing_facts": explanation.get("missing_facts", []),
+                "recommended_action": explanation.get("recommended_action"),
+                "confidence": explanation.get("confidence"),
+                "actions": ["Prepare application", "Ask why", "Save", "Skip"],
+            })
 
         skills = self._as_list(self._profile_value(profile, "skills"))[:8]
         years = self._profile_value(profile, "years_experience")
@@ -425,17 +454,46 @@ class RicoChatAPI:
         if routed.intent == "search_jobs":
             workflow_result = self.system.run_for_profile(profile)
             top_matches = workflow_result.get("matches", [])[:5]
-            formatted = [
-                {
+
+            # Build profile dict for explanation builder
+            profile_dict = {}
+            if profile:
+                if isinstance(profile, dict):
+                    profile_dict = profile
+                else:
+                    try:
+                        from dataclasses import asdict, is_dataclass
+                        profile_dict = asdict(profile) if is_dataclass(profile) else dict(profile)
+                    except Exception:
+                        profile_dict = {}
+
+            formatted = []
+            for m in top_matches:
+                job_dict = {
+                    "title": m.get("title"),
+                    "company": m.get("company"),
+                    "location": m.get("location"),
+                    "description": m.get("description", ""),
+                    "salary": m.get("salary") or m.get("salary_range"),
+                }
+
+                # Generate structured match explanation
+                explanation = build_match_explanation(job_dict, profile_dict)
+
+                formatted.append({
                     "title": m.get("title"),
                     "company": m.get("company"),
                     "location": m.get("location"),
                     "score": m.get("rico_score"),
                     "why": m.get("rico_explanation"),
-                    "actions": ["Apply", "Save", "Skip", "Why this?", "Draft", "Remind me"],
-                }
-                for m in top_matches
-            ]
+                    "match_reasons": explanation.get("match_reasons", []),
+                    "match_concerns": explanation.get("match_concerns", []),
+                    "missing_facts": explanation.get("missing_facts", []),
+                    "recommended_action": explanation.get("recommended_action"),
+                    "confidence": explanation.get("confidence"),
+                    "actions": ["Prepare application", "Ask why", "Save", "Skip"],
+                })
+
             response = {
                 "type": "job_matches",
                 "intent": "search_jobs",

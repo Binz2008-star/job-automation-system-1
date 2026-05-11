@@ -59,9 +59,11 @@ function ThinkingIndicator() {
 function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt: string) => void }) {
   const score = match.score ?? 0;
   const scoreLabel = score >= 0.8 ? "Strong match" : score >= 0.6 ? "Good match" : "Possible match";
+  const confidence = match.confidence || "medium";
+
   return (
     <div className="rounded-xl border border-white/8 bg-[#0f0f24] p-3 mb-2">
-      <div className="flex items-start justify-between gap-2 mb-1">
+      <div className="flex items-start justify-between gap-2 mb-2">
         <div>
           <div className="text-[13px] font-semibold text-white">{match.title}</div>
           <div className="text-[11px] text-[#8080a0]">{match.company}{match.location ? ` · ${match.location}` : ""}</div>
@@ -77,9 +79,59 @@ function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt:
           </span>
         )}
       </div>
-      {match.why && <p className="text-[11px] text-[#5a5a7a] mb-2 leading-relaxed">{match.why}</p>}
+
+      {/* Why this fits */}
+      {match.match_reasons && match.match_reasons.length > 0 && (
+        <div className="mb-2">
+          <p className="text-[10px] font-semibold text-[#5dcaa5] mb-1">Why this fits:</p>
+          <ul className="text-[10px] text-[#8080a0] list-disc list-inside space-y-0.5">
+            {match.match_reasons.map((reason, idx) => (
+              <li key={idx}>{reason}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Concerns */}
+      {match.match_concerns && match.match_concerns.length > 0 && (
+        <div className="mb-2">
+          <p className="text-[10px] font-semibold text-[#facc15] mb-1">Concerns:</p>
+          <ul className="text-[10px] text-[#8080a0] list-disc list-inside space-y-0.5">
+            {match.match_concerns.map((concern, idx) => (
+              <li key={idx}>{concern}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Missing facts */}
+      {match.missing_facts && match.missing_facts.length > 0 && (
+        <div className="mb-2">
+          <p className="text-[10px] font-semibold text-[#a78bfa] mb-1">Missing information:</p>
+          <ul className="text-[10px] text-[#8080a0] list-disc list-inside space-y-0.5">
+            {match.missing_facts.map((fact, idx) => (
+              <li key={idx}>{fact}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Recommended action */}
+      {match.recommended_action && (
+        <div className="mb-2 p-2 bg-white/5 rounded-lg border-l-2 border-[#5b4fff]">
+          <p className="text-[10px] font-semibold text-[#a78bfa] mb-0.5">Safest next step:</p>
+          <p className="text-[10px] text-[#eeeef5] leading-relaxed">{match.recommended_action}</p>
+        </div>
+      )}
+
+      {/* Fallback to legacy why field */}
+      {!match.match_reasons && match.why && (
+        <p className="text-[11px] text-[#5a5a7a] mb-2 leading-relaxed">{match.why}</p>
+      )}
+
+      {/* Actions */}
       {match.actions && match.actions.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-1">
+        <div className="flex flex-wrap gap-1.5 mt-2">
           {match.actions.map((action) => (
             <button
               key={action}
