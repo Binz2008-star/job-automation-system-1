@@ -204,6 +204,16 @@ def _check_feedback_state_file() -> Optional[str]:
     return None
 
 
+def _check_hf_config() -> Optional[str]:
+    from src.rico_env import get_rico_env_report
+    report = get_rico_env_report()
+    if report.ready_for_hf:
+        return f"HF free mode configured (provider={report.ai_provider})"
+    if report.ready_for_openai:
+        return f"OpenAI configured (provider={report.ai_provider})"
+    return "warning: no AI provider keys found — chat will use keyword fallback only"
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -219,6 +229,7 @@ CHECKS: List[tuple[str, Callable[[], Optional[str]]]] = [
     ("feedback orchestrator",  _check_feedback_orchestrator),
     ("dashboard generation",   _check_dashboard),
     ("feedback state files",   _check_feedback_state_file),
+    ("AI provider config",     _check_hf_config),
 ]
 
 

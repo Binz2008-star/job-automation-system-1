@@ -30,6 +30,7 @@ class RicoEnvReport:
     ready_for_telegram: bool
     ready_for_openai: bool
     ready_for_jotform: bool
+    ready_for_hf: bool
     ai_provider: str
     checks: List[EnvCheck]
 
@@ -40,6 +41,7 @@ class RicoEnvReport:
             "ready_for_telegram": self.ready_for_telegram,
             "ready_for_openai": self.ready_for_openai,
             "ready_for_jotform": self.ready_for_jotform,
+            "ready_for_hf": self.ready_for_hf,
             "ai_provider": self.ai_provider,
             "checks": [asdict(check) for check in self.checks],
         }
@@ -50,9 +52,13 @@ ENV_SPECS = [
     ("TELEGRAM_BOT_TOKEN", False, "Telegram bot messages and webhook replies"),
     ("TELEGRAM_CHAT_ID", False, "Legacy/default Telegram notification target"),
     ("OPENAI_API_KEY", False, "AI tool-calling, message generation, and advanced reasoning"),
-    ("RICO_AI_PROVIDER", False, "AI provider: none|openai (default: none)"),
+    ("HF_API_KEY", False, "Hugging Face free inference API key for fallback chat responses"),
+    ("HF_TOKEN", False, "Legacy Hugging Face token — also checked for HF fallback"),
+    ("HUGGINGFACE_API_KEY", False, "Alternative Hugging Face key alias"),
+    ("RICO_AI_PROVIDER", False, "AI provider: none|openai|huggingface (default: auto)"),
     ("JOTFORM_API_KEY", False, "Jotform onboarding CV/file retrieval"),
     ("JOTFORM_FORM_ID", False, "Rico onboarding form ID"),
+    ("JOTFORM_RICO_FORM_ID", False, "Rico onboarding form ID alias"),
     ("JOTFORM_WEBHOOK_SECRET", False, "Webhook verification when enabled"),
     ("REDIS_URL", False, "Background jobs, reminders, and alert queues"),
     ("RICO_ENABLE_AUTO_APPLY", False, "Feature flag; should default to false"),
@@ -67,17 +73,41 @@ def env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def get_ai_provider() -> str:
-    """Get the AI provider from environment.
+def _hf_key_present() -> bool:
+    """True when any HF key alias is set."""
+    return bool(
+        os.getenv("HF_API_KEY") or os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY")
+    )
 
-    Returns:
-        str: "none" or "openai". Defaults to "none" if not set or invalid.
+
+def _openai_key_present() -> bool:
+    """True when either canonical or legacy OpenAI env var is set."""
+    return bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_AI_API"))
+
+
+def get_ai_provider() -> str:
+    """Get the AI provider from environment with safe auto-detection.
+
+    Explicit RICO_AI_PROVIDER always wins.
+    When not set:
+      - If OpenAI is explicitly chosen and key present → "openai"
+      - If HF key present → "huggingface" (default free path)
+      - Else → "none"
+
+    OpenAI is NEVER auto-enabled to avoid billing surprises.
     """
-    provider = os.getenv("RICO_AI_PROVIDER", "none").strip().lower()
-    if provider not in {"none", "openai"}:
-        logger.warning(f"Invalid RICO_AI_PROVIDER value: {provider}. Using 'none'.")
-        return "none"
-    return provider
+    provider = os.getenv("RICO_AI_PROVIDER", "").strip().lower()
+    if provider:
+        if provider in {"none", "openai", "huggingface"}:
+            return provider
+        logger.warning(f"Invalid RICO_AI_PROVIDER value: {provider}. Using auto-detect.")
+
+    # Auto-detect: HF is the safe default free path
+    if _hf_key_present():
+        return "huggingface"
+    if _openai_key_present() and provider == "openai":
+        return "openai"
+    return "none"
 
 
 def get_rico_env_report() -> RicoEnvReport:
@@ -87,13 +117,29 @@ def get_rico_env_report() -> RicoEnvReport:
     ]
     present = {check.name: check.present for check in checks}
     provider = get_ai_provider()
-    openai_key_present = present.get("OPENAI_API_KEY", False) or bool(os.getenv("OPEN_AI_API"))
+    openai_key_present = _openai_key_present()
+    hf_key_present = _hf_key_present()
+
+    # OpenAI is only "ready" when explicitly enabled AND key present
+    ready_for_openai = provider == "openai" and openai_key_present
+
+    # HF is ready when any HF key is present
+    ready_for_hf = hf_key_present
+
+    # Jotform is ready when form ID is present (webhook secret is production-only)
+    jotform_form_id_present = bool(
+        present.get("JOTFORM_FORM_ID", False)
+        or present.get("JOTFORM_RICO_FORM_ID", False)
+    )
+    ready_for_jotform = jotform_form_id_present
+
     return RicoEnvReport(
         ready_for_api=True,
         ready_for_db=present.get("DATABASE_URL", False),
         ready_for_telegram=present.get("TELEGRAM_BOT_TOKEN", False),
-        ready_for_openai=provider == "openai" and openai_key_present,
-        ready_for_jotform=(present.get("JOTFORM_FORM_ID", False) and present.get("JOTFORM_WEBHOOK_SECRET", False)),
+        ready_for_openai=ready_for_openai,
+        ready_for_jotform=ready_for_jotform,
+        ready_for_hf=ready_for_hf,
         ai_provider=provider,
         checks=checks,
     )

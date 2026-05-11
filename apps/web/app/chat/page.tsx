@@ -86,14 +86,16 @@ export default function ChatPage() {
         res.data?.message ??
         res.data?.content ??
         "";
-      const freeMode = res.response_source === "free_mode" || res.openai_available === false;
+      const provider = res.provider ?? res.response_source ?? "unknown";
+      const freeMode = provider === "fallback" || provider === "none" || res.openai_available === false;
+      const hfMode = provider === "huggingface" || provider === "hf";
       if (!reply) {
         setMessages((prev) => [
           ...prev,
           { id: nextId(), role: "rico", text: "Rico returned an empty response. Please try again." },
         ]);
       } else {
-        setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: reply, freeMode }]);
+        setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: reply, freeMode: freeMode && !hfMode }]);
       }
     } catch (err) {
       if (err instanceof Error && err.message.includes("401")) {
@@ -223,7 +225,7 @@ export default function ChatPage() {
                   {m.text}
                   {m.freeMode && (
                     <p className="mt-1.5 text-[11px] text-[#5a5a7a]">
-                      Free mode — OpenAI unavailable
+                      Free mode — AI fallback active
                     </p>
                   )}
                 </div>
