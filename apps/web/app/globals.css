@@ -52,3 +52,30 @@ body::after {
 }
 .animate-in { animation-duration: 300ms; animation-fill-mode: both; }
 .slide-in-from-right-4 { animation-name: slide-in-from-right; }
+
+/* Focus-visible utilities for accessibility (WCAG 2.2 AA + AAA-style) */
+/* Philosophy: clarity under stress, orientation for tired users */
+/* Never remove outlines unless replacing with something stronger */
+.focus-visible-ring:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: 3px;
+  border-radius: 4px;
+  transition: outline 0.15s ease-out;
+}
+
+/* Stronger focus for primary actions and guidance elements */
+.focus-visible-ring-strong:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 5px var(--accent-glow);
+  transition: outline 0.15s ease-out, box-shadow 0.15s ease-out;
+}
+
+/* Focus for badges carrying guidance */
+.focus-visible-badge:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+  border-radius: 9999px;
+  transition: outline 0.15s ease-out;
+}

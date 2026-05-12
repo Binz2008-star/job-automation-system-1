@@ -111,7 +111,7 @@ function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt:
             </span>
           )}
           {/* Confidence badge with icon and label for accessibility */}
-          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1 ${confidenceBadge.bgColor} ${confidenceBadge.textColor} border ${confidenceBadge.borderColor}`}>
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1 ${confidenceBadge.bgColor} ${confidenceBadge.textColor} border ${confidenceBadge.borderColor} focus-visible-badge cursor-pointer`}>
             <span aria-hidden="true">{confidenceBadge.icon}</span>
             <span>{confidenceBadge.label}</span>
           </span>
@@ -183,7 +183,7 @@ function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt:
             <button
               key={action}
               onClick={() => onAction(`${action} — ${match.title} at ${match.company}`)}
-              className="text-[10px] px-2.5 py-1 rounded-lg border border-white/10 text-[#8080a0] hover:border-[#5b4fff]/40 hover:text-white transition-colors"
+              className="text-[10px] px-2.5 py-1 rounded-lg border border-white/10 text-[#8080a0] hover:border-[#5b4fff]/40 hover:text-white transition-colors focus-visible-ring"
             >
               {action}
             </button>
