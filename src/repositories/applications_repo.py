@@ -1,15 +1,13 @@
 """
 src/repositories/applications_repo.py
-User-scoped adapter over Rico DB (primary path) with legacy JSON store fallback
-for callers that omit user_id (automated pipeline only).
+User-scoped adapter over Rico DB (SaaS path).
 
 SaaS-path contract:
   - Callers MUST supply user_id (derived from JWT via get_current_user_id dep).
-  - DB unavailability raises HTTP 503 — no silent fallback to global JSON.
+  - DB unavailability raises HTTP 503.
   - User registered via /api/v1/auth/register is auto-provisioned in rico_users on
     first SaaS access (upsert with source='auth_register').
   - Transient DB errors propagate as 503, not 404.
-  - Legacy pipeline callers may omit user_id to keep the old single-user JSON path.
 """
 from __future__ import annotations
 
@@ -81,12 +79,8 @@ def _provision_db_user_id(db: Any, user_id: str) -> str:
 # ── Public API ───────────────────────────────────────────────────────────────
 
 
-def get_all(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Load tracked applications.  When ``user_id`` is given, Rico DB is used (SaaS path)."""
-    if not user_id:
-        logger.warning("LEGACY_FALLBACK_NO_USER_ID: get_all")
-        return _get_applied()
-
+def get_all(user_id: str) -> List[Dict[str, Any]]:
+    """Load tracked applications for a specific user (SaaS path)."""
     db = _db()
     if not db:
         raise HTTPException(status_code=503, detail="Database unavailable")
@@ -95,12 +89,8 @@ def get_all(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
     return db.get_recommendations(db_user_id, limit=200)
 
 
-def get_stats(user_id: Optional[str] = None) -> Dict[str, Any]:
-    """Aggregate statistics.  When ``user_id`` is given, Rico DB is used (SaaS path)."""
-    if not user_id:
-        logger.warning("LEGACY_FALLBACK_NO_USER_ID: get_stats")
-        return _get_stats()
-
+def get_stats(user_id: str) -> Dict[str, Any]:
+    """Aggregate statistics for a specific user (SaaS path)."""
     db = _db()
     if not db:
         raise HTTPException(status_code=503, detail="Database unavailable")
@@ -109,15 +99,8 @@ def get_stats(user_id: Optional[str] = None) -> Dict[str, Any]:
     return db.get_recommendation_stats(db_user_id)
 
 
-def find_by_job_id(job_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Find a single application record by its job_id hash."""
-    if not user_id:
-        logger.warning("LEGACY_FALLBACK_NO_USER_ID: find_by_job_id")
-        return next(
-            (a for a in _get_applied() if isinstance(a, dict) and a.get("job_id") == job_id),
-            None,
-        )
-
+def find_by_job_id(job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+    """Find a single application record by its job_id hash for a specific user."""
     db = _db()
     if not db:
         raise HTTPException(status_code=503, detail="Database unavailable")
@@ -131,13 +114,9 @@ def find_by_job_id(job_id: str, user_id: Optional[str] = None) -> Optional[Dict[
 
 
 def update_status(
-    job: Dict[str, Any], status: str, notes: str = "", user_id: Optional[str] = None
+    job: Dict[str, Any], status: str, user_id: str, notes: str = ""
 ) -> bool:
-    """Update application status.  When ``user_id`` is given, Rico DB is used (SaaS path)."""
-    if not user_id:
-        logger.warning("LEGACY_FALLBACK_NO_USER_ID: update_status")
-        return _update_status(job, status, notes)
-
+    """Update application status for a specific user (SaaS path)."""
     db = _db()
     if not db:
         raise HTTPException(status_code=503, detail="Database unavailable")

@@ -65,7 +65,7 @@ def update_application(
     if not target:
         raise HTTPException(status_code=404, detail=f"Application {job_id!r} not found")
 
-    ok = update_status(target, req.status, req.notes or "", user_id=user_id)
+    ok = update_status(target, req.status, user_id, req.notes or "")
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to update application status")
 

@@ -573,21 +573,20 @@ class WorkflowCoordinator:
         """Execute stats retrieval workflow."""
         try:
             tool_def = tool_registry.get("get_application_stats")
-            tool_result = tool_def.fn()
+            tool_result = tool_def.fn(user_id=canonical_user_id)
 
             return WorkflowResult(
                 success=tool_result.success,
                 intent=IntentType.GET_STATS,
-                message="Application statistics retrieved",
-                data=tool_result.data or {},
-                error=tool_result.error if not tool_result.success else None,
+                data=tool_result.data,
+                message=tool_result.error if not tool_result.success else None,
+                execution_time_ms=tool_result.execution_time_ms,
             )
         except Exception as exc:
             logger.exception("get_stats_failed user=%s", canonical_user_id)
             return WorkflowResult(
                 success=False,
                 intent=IntentType.GET_STATS,
-                message=f"Stats retrieval failed: {str(exc)}",
                 error=str(exc),
             )
 
