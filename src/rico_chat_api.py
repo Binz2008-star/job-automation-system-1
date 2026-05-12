@@ -481,6 +481,12 @@ class RicoChatAPI:
 
         # Fallback: unknown intent — use HF for natural reply or templated fallback
         user_context = self._build_openai_context(profile)
+
+        # If profile has years_experience or cv_status=parsed, add instruction to skip asking about experience
+        if self._has_cv_profile(profile):
+            if isinstance(user_context, dict):
+                user_context["skip_experience_question"] = True
+
         ai_response = self._get_openai_agent().respond(message, user_context=user_context)
         self.memory.append_chat_message(user_id, "assistant", ai_response.get("message", ""))
         return self._finalize(ai_response, self._source_for_openai_response(ai_response), profile=profile)
