@@ -298,12 +298,10 @@ class RicoSystem:
             except Exception as e:
                 logger.warning(f"learning_repo_unavailable: {e}")
 
-        # Agent recommendations with precomputed scores to avoid duplicate scoring
-        precomputed_scores = {job.get("link", job.get("url", "")): score for job, score in enriched}
+        # Agent recommendations
         rico_recommendations = self.agent.recommend_jobs(
             profile=profile,
             jobs=[job for job, _ in enriched],
-            precomputed_scores=precomputed_scores,  # Avoid duplicate scoring
         )
 
         # Preserve existing pipeline scores alongside Rico explanations
