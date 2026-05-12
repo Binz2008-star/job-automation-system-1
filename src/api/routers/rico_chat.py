@@ -29,7 +29,6 @@ import os
 import re
 import secrets
 import time
-from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 from functools import wraps
@@ -226,6 +225,45 @@ def _validate_jotform_secret(request: Request) -> None:
     if not provided or not secrets.compare_digest(provided, webhook_secret):
         logger.warning("jotform_webhook: missing or invalid secret")
         raise HTTPException(status_code=403, detail="Invalid or missing webhook secret")
+
+
+def _extract_roles_from_cv_text(cv_text: str) -> list[str]:
+    """Extract job titles from CV text using role patterns."""
+    if not cv_text:
+        return []
+
+    roles = set()
+    text_lower = cv_text.lower()
+
+    # Pattern 1: Common role title patterns (Senior X, X Manager, etc.)
+    role_patterns = [
+        r"(?:senior|lead|principal|staff|junior|mid)?\s*(?:manager|engineer|developer|architect|analyst|consultant|specialist|director|coordinator|officer)",
+        r"(?:operations|environmental|hse|qhse|ehs|safety|quality|compliance|sustainability)\s*(?:manager|lead|officer|specialist|coordinator)",
+    ]
+
+    for pattern in role_patterns:
+        matches = re.finditer(pattern, text_lower, re.IGNORECASE)
+        for match in matches:
+            role = match.group(0).strip().title()
+            if len(role.split()) <= 4:  # Reasonable role length
+                roles.add(role)
+
+    # Pattern 2: Extract from experience section lines
+    lines = cv_text.split('\n')
+    for line in lines:
+        line = line.strip()
+        if not line or len(line) < 10:
+            continue
+
+        # Look for lines that look like job titles (capitalized, no numbers at start)
+        if re.match(r'^[A-Z][A-Za-z\s&/+-]{3,50}$', line):
+            # Filter out common non-role lines
+            skip_keywords = {'summary', 'experience', 'education', 'skills', 'certifications', 'languages', 'contact', 'profile'}
+            words = line.lower().split()
+            if not any(word in skip_keywords for word in words):
+                roles.add(line.strip())
+
+    return sorted(list(roles))[:5]  # Return top 5 roles
 
 
 def _webhook_handler(event_name: str):
@@ -654,11 +692,16 @@ async def rico_upload_cv(
     existing_profile = get_profile(resolved_user_id)
     existing_skills = getattr(existing_profile, "skills", []) if existing_profile else []
 
+    # Extract target roles from CV text using role patterns
+    cv_text = parsed.get("text", "")
+    target_roles = _extract_roles_from_cv_text(cv_text)
+
     profile_updates = {
         "email": parsed.get("emails", [None])[0] if parsed.get("emails") else None,
         "phone": parsed.get("phones", [None])[0] if parsed.get("phones") else None,
         "skills": parsed.get("skills", []) if parsed.get("skills") else existing_skills,
         "years_experience": parsed.get("years_experience_hint"),
+        "target_roles": target_roles if target_roles else None,
         "cv_filename": safe_name,
         "cv_status": "parsed",
         "cv_extracted_at": datetime.now(_UTC).isoformat(),
