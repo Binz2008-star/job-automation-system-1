@@ -1,276 +1,267 @@
-"""Rule-based match explanation builder for Rico companion intelligence.
+"""Rule-based structured match explanations for Rico job recommendations.
 
-This module generates structured, fact-based explanations for why a job matches
-a user's profile, what concerns exist, what facts are missing, and what the
-recommended next action should be.
-
-This is rule-based (not AI-dependent) for predictability, testability, and
-to avoid hallucinations. The logic can be enhanced with AI later for wording.
-
-PHILOSOPHY:
-- Confidence = Rico's confidence in recommendation quality (fit quality), NOT hiring probability
-- Major red flags override optimistic scores
-- Confidence label > raw score (confidence is Rico's final judgment)
-- Three tiers only: High, Medium, Low (no fake precision)
-- High confidence must be earned (strong fit + low uncertainty + no critical missing facts)
-- Low confidence triggers automatically on major mismatches
-- Medium confidence is default (useful signals but review carefully)
+V1 principle: deterministic, short, honest explanations.  This module does not
+predict hiring probability; it explains whether a recommendation is worth the
+user's attention based on profile fit and available facts.
 """
-
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+import re
+from dataclasses import asdict, is_dataclass
+from typing import Any, Dict, Iterable, List, Literal
+
+Confidence = Literal["high", "medium", "low"]
+
+_CRITICAL_MISSING = (
+    "salary range",
+    "visa requirements",
+    "experience level",
+    "language requirements",
+)
+
+_SENIOR_TERMS = {"senior", "lead", "manager", "head", "director", "chief", "vp"}
+_JUNIOR_TERMS = {"junior", "assistant", "trainee", "intern", "entry"}
 
 
-def _detect_critical_red_flags(job: Dict[str, Any], profile: Dict[str, Any]) -> List[str]:
-    """Detect critical red flags that should override optimistic scores.
-
-    These force Low confidence regardless of numerical score because Rico's
-    philosophy is: do not encourage unrealistic applications.
-
-    Returns:
-        List of critical red flag descriptions
-    """
-    red_flags: List[str] = []
-
-    job_title = str(job.get("title", "")).lower()
-    job_description = str(job.get("description", "")).lower()
-    job_location = str(job.get("location", job.get("city", ""))).lower()
-    job_salary = job.get("salary") or job.get("salary_range")
-    job_combined = f"{job_title} {job_description} {job_location}"
-
-    target_roles = profile.get("target_roles", [])
-    preferred_cities = profile.get("preferred_cities", [])
-    minimum_salary = profile.get("minimum_salary_aed")
-    visa_status = profile.get("visa_status")
-    years_experience = profile.get("years_experience")
-
-    # Salary below minimum
-    if job_salary and minimum_salary:
-        salary_str = str(job_salary).lower()
-        if "aed" in salary_str:
-            import re
-            numbers = re.findall(r'\d+', salary_str)
-            if numbers:
-                max_salary = max(map(int, numbers))
-                if max_salary < minimum_salary:
-                    red_flags.append(f"Salary ({max_salary}) is below your minimum ({minimum_salary})")
-
-    # Major location mismatch
-    if preferred_cities:
-        has_location_match = any(city.lower() in job_location for city in preferred_cities)
-        if not has_location_match and job_location and "remote" not in job_location:
-            red_flags.append(f"Location ({job_location}) is not in your preferred cities")
-
-    # Role mismatch
-    if target_roles:
-        has_role_match = any(role.lower() in job_title or role.lower() in job_description for role in target_roles)
-        if not has_role_match:
-            red_flags.append(f"Job title does not match your target roles")
-
-    # Visa conflict
-    if visa_status and "visa" in job_combined.lower():
-        if "sponsor" not in job_combined.lower() and visa_status.lower() in ["needs sponsorship", "requires visa"]:
-            red_flags.append("Visa sponsorship not mentioned but you require it")
-
-    # Strong seniority mismatch
-    if years_experience:
-        if "senior" in job_title and years_experience < 3:
-            red_flags.append(f"Senior role requires more experience (you have {years_experience} years)")
-        elif "junior" in job_title and years_experience > 7:
-            red_flags.append(f"Junior role may be below your experience level (you have {years_experience} years)")
-
-    return red_flags
+def _to_dict(value: Any) -> Dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if is_dataclass(value):
+        return asdict(value)
+    result: Dict[str, Any] = {}
+    for key in dir(value):
+        if key.startswith("_"):
+            continue
+        try:
+            attr = getattr(value, key)
+        except Exception:
+            continue
+        if not callable(attr):
+            result[key] = attr
+    return result
 
 
-def _detect_positive_fit_signals(job: Dict[str, Any], profile: Dict[str, Any]) -> List[str]:
-    """Detect positive fit signals that support a recommendation.
-
-    Returns:
-        List of positive signal descriptions
-    """
-    signals: List[str] = []
-
-    job_title = str(job.get("title", "")).lower()
-    job_description = str(job.get("description", "")).lower()
-    job_location = str(job.get("location", job.get("city", ""))).lower()
-    job_salary = job.get("salary") or job.get("salary_range")
-
-    target_roles = profile.get("target_roles", [])
-    preferred_cities = profile.get("preferred_cities", [])
-    skills = profile.get("skills", [])
-    salary_expectation = profile.get("salary_expectation_aed")
-    languages = profile.get("languages", [])
-
-    # Role match
-    for role in target_roles:
-        if role.lower() in job_title:
-            signals.append(f"Job title matches target role: {role}")
-
-    # Location match
-    for city in preferred_cities:
-        if city.lower() in job_location:
-            signals.append(f"Location matches preference: {city}")
-
-    # Skills overlap
-    matched_skills = [skill for skill in skills if skill.lower() in job_description]
-    if matched_skills:
-        signals.append(f"Skills overlap: {', '.join(matched_skills[:3])}")
-
-    # Salary alignment
-    if job_salary and salary_expectation:
-        signals.append("Salary information available and within range")
-
-    # Language match
-    for language in languages:
-        if language.lower() in job_description:
-            signals.append(f"Language requirement met: {language}")
-
-    return signals
+def _as_list(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        if not value.strip():
+            return []
+        return [part.strip() for part in re.split(r"[,;|]", value) if part.strip()]
+    return [str(value).strip()] if str(value).strip() else []
 
 
-def _detect_missing_critical_facts(job: Dict[str, Any]) -> List[str]:
-    """Detect missing critical facts that should prevent High confidence.
+def _text(*parts: Any) -> str:
+    return " ".join(str(part or "") for part in parts).lower()
 
-    Critical facts: salary, visa, work authorization, seniority, language requirements.
 
-    Returns:
-        List of missing critical fact descriptions
-    """
-    missing: List[str] = []
+def _contains_any(haystack: str, needles: Iterable[str]) -> bool:
+    haystack_l = haystack.lower()
+    return any(needle.lower() in haystack_l for needle in needles if needle)
 
-    job_title = str(job.get("title", "")).lower()
-    job_description = str(job.get("description", "")).lower()
-    job_salary = job.get("salary") or job.get("salary_range")
 
-    # Salary missing
-    if not job_salary:
-        missing.append("salary range")
+def _salary_number(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    text = str(value).lower().replace(",", "")
+    numbers = [int(n) for n in re.findall(r"\d{4,6}", text)]
+    if not numbers:
+        # Handle compact ranges such as AED 25k.
+        compact = [int(n) * 1000 for n in re.findall(r"\b(\d{2,3})\s*k\b", text)]
+        numbers = compact
+    return max(numbers) if numbers else None
 
-    # Visa/work authorization
-    job_combined = f"{job_title} {job_description}"
-    if "visa" in job_combined.lower() and "sponsor" not in job_combined.lower():
-        missing.append("visa sponsorship details")
 
-    # Language requirements
-    if "arabic" in job_description or "language" in job_description:
-        missing.append("language requirements details")
+def _has_salary(job: Dict[str, Any]) -> bool:
+    return bool(job.get("salary") or job.get("salary_range") or job.get("compensation"))
 
-    # Seniority/experience requirements
-    if "senior" in job_title or "junior" in job_title or "experience" in job_description:
-        missing.append("experience level requirements")
 
-    return missing
+def _salary_text(job: Dict[str, Any]) -> str:
+    return str(job.get("salary") or job.get("salary_range") or job.get("compensation") or "")
+
+
+def _job_text(job: Dict[str, Any]) -> str:
+    return _text(
+        job.get("title"),
+        job.get("company"),
+        job.get("location"),
+        job.get("description"),
+        job.get("summary"),
+        job.get("requirements"),
+        job.get("tags"),
+    )
+
+
+def _profile_salary_min(profile: Dict[str, Any]) -> int | None:
+    return _salary_number(
+        profile.get("minimum_salary_aed")
+        or profile.get("salary_minimum_aed")
+        or profile.get("salary_expectation_aed")
+    )
+
+
+def _role_match(job: Dict[str, Any], profile: Dict[str, Any]) -> bool:
+    title = str(job.get("title") or "").lower()
+    target_roles = _as_list(profile.get("target_roles"))
+    return bool(target_roles and _contains_any(title, target_roles))
+
+
+def _location_match(job: Dict[str, Any], profile: Dict[str, Any]) -> bool:
+    location = str(job.get("location") or job.get("city") or "").lower()
+    cities = _as_list(profile.get("preferred_cities") or profile.get("preferred_city"))
+    return bool(location and cities and _contains_any(location, cities))
+
+
+def _location_mismatch(job: Dict[str, Any], profile: Dict[str, Any]) -> bool:
+    location = str(job.get("location") or job.get("city") or "").lower()
+    cities = _as_list(profile.get("preferred_cities") or profile.get("preferred_city"))
+    if not location or not cities:
+        return False
+    if "remote" in location or "uae" in location:
+        return False
+    return not _contains_any(location, cities)
+
+
+def _skill_overlap(job: Dict[str, Any], profile: Dict[str, Any]) -> List[str]:
+    skills = _as_list(profile.get("skills"))
+    text = _job_text(job)
+    matches = [skill for skill in skills if len(skill) > 2 and skill.lower() in text]
+    return matches[:5]
+
+
+def _seniority_mismatch(job: Dict[str, Any], profile: Dict[str, Any]) -> bool:
+    title = str(job.get("title") or "").lower()
+    years = profile.get("years_experience") or profile.get("years_experience_hint")
+    try:
+        years_num = float(years) if years is not None else None
+    except (TypeError, ValueError):
+        years_num = None
+    if years_num is None:
+        return False
+    is_senior_job = any(term in title for term in _SENIOR_TERMS)
+    is_junior_job = any(term in title for term in _JUNIOR_TERMS)
+    return (is_senior_job and years_num < 3) or (is_junior_job and years_num >= 8)
+
+
+def _missing_facts(job: Dict[str, Any]) -> List[str]:
+    facts: List[str] = []
+    text = _job_text(job)
+    if not _has_salary(job):
+        facts.append("salary range")
+    if "visa" not in text and "sponsor" not in text and "work permit" not in text:
+        facts.append("visa requirements")
+    if not any(term in text for term in ["experience", "years", "senior", "junior", "manager", "lead"]):
+        facts.append("experience level")
+    if not any(term in text for term in ["english", "arabic", "bilingual", "language"]):
+        facts.append("language requirements")
+    return facts[:3]
 
 
 def calculate_confidence(
-    red_flags: List[str],
-    positive_signals: List[str],
-    missing_facts: List[str]
-) -> Tuple[str, List[str]]:
-    """Calculate confidence tier based on red flags, signals, and missing facts.
+    match_reasons: List[str],
+    match_concerns: List[str],
+    missing_facts: List[str],
+    *,
+    major_red_flags: int = 0,
+) -> Confidence:
+    """Return Rico's confidence in recommendation quality, not hiring odds."""
+    if major_red_flags > 0:
+        return "low"
+    if len(missing_facts) >= 3:
+        return "low"
+    if len(match_reasons) >= 3 and len(match_concerns) == 0 and len(missing_facts) <= 1:
+        return "high"
+    return "medium"
 
-    IMPORTANT: Confidence label > raw score. This is Rico's final judgment.
 
-    Returns:
-        Tuple of (confidence_tier, concerns_list)
-        confidence_tier: "high" | "medium" | "low"
-    """
-    concerns: List[str] = []
-
-    # CRITICAL: Any red flag forces Low confidence
-    if red_flags:
-        concerns.extend(red_flags)
-        return "low", concerns
-
-    # CRITICAL: Too many missing critical facts prevents High confidence
-    critical_missing = [f for f in missing_facts if f in ["salary range", "visa sponsorship details"]]
-    if len(critical_missing) >= 2:
-        concerns.append(f"Critical information missing: {', '.join(critical_missing)}")
-        return "low", concerns
-
-    # High confidence: strong signals + low uncertainty
-    # Requires: at least 3 positive signals + no more than 1 missing fact
-    if len(positive_signals) >= 3 and len(missing_facts) <= 1:
-        return "high", concerns
-
-    # Medium confidence: some signals but review needed
-    # Default tier for most jobs
-    if len(positive_signals) >= 2:
-        if missing_facts:
-            concerns.append(f"Some details unclear: {', '.join(missing_facts[:2])}")
-        return "medium", concerns
-
-    # Low confidence: weak signals or too uncertain
+def build_recommended_action(
+    confidence: Confidence,
+    match_concerns: List[str],
+    missing_facts: List[str],
+) -> str:
+    if confidence == "high":
+        return "Review the role and prepare a tailored application before applying."
+    if confidence == "low":
+        return "Review the risk areas before applying so you do not spend energy blindly."
     if missing_facts:
-        concerns.append(f"Too much information missing: {', '.join(missing_facts)}")
+        return "Review the missing details, then decide whether to prepare an application."
+    if match_concerns:
+        return "Check the flagged items before applying."
+    return "Review the role and ask Rico to prepare your application if it still feels right."
+
+
+def build_match_explanation(job: Dict[str, Any], profile: Any | None) -> Dict[str, Any]:
+    """Build Rico's v1 structured match explanation.
+
+    Returns exactly:
+      confidence, match_reasons, match_concerns, missing_facts,
+      recommended_action
+    """
+    job_data = _to_dict(job)
+    profile_data = _to_dict(profile)
+    title = str(job_data.get("title") or "This role")
+    location = str(job_data.get("location") or job_data.get("city") or "")
+    match_reasons: List[str] = []
+    match_concerns: List[str] = []
+    major_red_flags = 0
+
+    if _role_match(job_data, profile_data):
+        match_reasons.append("The role title matches your target role.")
+    elif _as_list(profile_data.get("target_roles")):
+        match_concerns.append("The role title does not clearly match your target roles.")
+        major_red_flags += 1
     else:
-        concerns.append("Limited fit signals detected")
-    return "low", concerns
+        match_concerns.append("Your target role is not fully set yet.")
 
+    if _location_match(job_data, profile_data):
+        match_reasons.append("The location matches one of your preferred cities.")
+    elif _location_mismatch(job_data, profile_data):
+        match_concerns.append("The location appears outside your preferred cities.")
+        major_red_flags += 1
+    elif location:
+        match_reasons.append("The job location is available for review.")
 
-def build_recommended_action(confidence: str, match_concerns: List[str], missing_facts: List[str]) -> str:
-    """Build recommended action based on confidence and concerns.
+    skills = _skill_overlap(job_data, profile_data)
+    if skills:
+        shown = ", ".join(skills[:3])
+        match_reasons.append(f"Your profile includes relevant skills: {shown}.")
+    elif _as_list(profile_data.get("skills")):
+        match_concerns.append("The job text does not clearly show your strongest skills.")
 
-    Uses short, factual sentences in Rico's trust tone.
+    salary_min = _profile_salary_min(profile_data)
+    salary_seen = _salary_number(_salary_text(job_data))
+    if salary_min and salary_seen:
+        if salary_seen >= salary_min:
+            match_reasons.append("The listed salary appears aligned with your minimum target.")
+        else:
+            match_concerns.append("The listed salary appears below your minimum target.")
+            major_red_flags += 1
 
-    Args:
-        confidence: The calculated confidence tier ("high", "medium", or "low")
-        match_concerns: List of concerns detected
-        missing_facts: List of missing facts detected
+    if _seniority_mismatch(job_data, profile_data):
+        match_concerns.append("The seniority level may not match your experience profile.")
+        major_red_flags += 1
 
-    Returns:
-        Short, factual recommended action string
-    """
-    if confidence == "high" and not match_concerns:
-        return "This looks like a strong fit based on your role, skills, and preferred location. The available information supports moving forward."
-    elif confidence == "high" and match_concerns:
-        return "This role looks strong, but verify the concerns before applying. Let me tailor your CV first."
-    elif confidence == "medium":
-        return "This role looks promising, but some important details are unclear. Review carefully before applying."
-    else:  # low
-        return "This role has meaningful risks or missing information. Do not apply blindly until these concerns are clarified."
+    missing = _missing_facts(job_data)
+    confidence = calculate_confidence(
+        match_reasons,
+        match_concerns,
+        missing,
+        major_red_flags=major_red_flags,
+    )
 
+    if not match_reasons:
+        match_reasons.append(f"{title} may still be worth reviewing if it matches your goals.")
 
-def build_match_explanation(job: Dict[str, Any], profile: Dict[str, Any]) -> Dict[str, Any]:
-    """Build a structured, rule-based explanation for why a job may fit a user.
-
-    Returns raw structured data only. The UI decides labels and layout.
-
-    Args:
-        job: Job dictionary with title, company, location, description, salary, etc.
-        profile: User profile dictionary with target_roles, preferred_cities,
-                 skills, salary_expectation_aed, minimum_salary_aed, visa_status, etc.
-
-    Returns:
-        {
-            "confidence": "high" | "medium" | "low",
-            "match_reasons": list[str],
-            "match_concerns": list[str],
-            "missing_facts": list[str],
-            "recommended_action": str,
-        }
-    """
-    # Step 1: Detect critical red flags (override optimistic scores)
-    red_flags = _detect_critical_red_flags(job, profile)
-
-    # Step 2: Detect positive fit signals
-    positive_signals = _detect_positive_fit_signals(job, profile)
-
-    # Step 3: Detect missing critical facts
-    missing_facts = _detect_missing_critical_facts(job)
-
-    # Step 4: Calculate confidence (red flags > signals > missing facts)
-    confidence, concerns = calculate_confidence(red_flags, positive_signals, missing_facts)
-
-    # Step 5: Build recommended action
-    recommended_action = build_recommended_action(confidence, concerns, missing_facts)
-
-    # Step 6: Return structured data (limit to 3 items for cognitive load)
     return {
         "confidence": confidence,
-        "match_reasons": positive_signals[:3],
-        "match_concerns": concerns[:3],
-        "missing_facts": missing_facts[:3],
-        "recommended_action": recommended_action,
+        "match_reasons": match_reasons[:3],
+        "match_concerns": match_concerns[:3],
+        "missing_facts": missing[:3],
+        "recommended_action": build_recommended_action(confidence, match_concerns, missing),
     }
