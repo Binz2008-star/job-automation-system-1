@@ -92,7 +92,7 @@ function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt:
   const confidenceBadge = getConfidenceBadge();
 
   return (
-    <div className="rounded-xl border border-white/8 bg-[#0f0f24] p-3 mb-2">
+    <article className="rounded-xl border border-white/8 bg-[#0f0f24] p-3 mb-2" aria-label={`Job match: ${match.title} at ${match.company}. ${scoreLabel}. ${confidenceBadge.label}.`}>
       {/* Top row: title, company, score, confidence */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex-1 min-w-0">
@@ -120,7 +120,7 @@ function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt:
 
       {/* Why this fits - max 4 items for scan speed */}
       {match.match_reasons && match.match_reasons.length > 0 && (
-        <div className="mb-2">
+        <section className="mb-2" aria-label="Why this job fits your profile">
           <p className="text-[10px] font-semibold text-[#5dcaa5] mb-1">Why this fits:</p>
           <ul className="text-[10px] text-[#8080a0] list-disc list-inside space-y-0.5">
             {match.match_reasons.slice(0, 4).map((reason, idx) => (
@@ -130,12 +130,12 @@ function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt:
               <li className="text-[9px] text-[#5a5a7a] italic">+{match.match_reasons.length - 4} more reasons</li>
             )}
           </ul>
-        </div>
+        </section>
       )}
 
       {/* Concerns - max 3 items to prevent overwhelming */}
       {match.match_concerns && match.match_concerns.length > 0 && (
-        <div className="mb-2">
+        <section className="mb-2" aria-label="Concerns about this job match">
           <p className="text-[10px] font-semibold text-[#facc15] mb-1">Concerns:</p>
           <ul className="text-[10px] text-[#8080a0] list-disc list-inside space-y-0.5">
             {match.match_concerns.slice(0, 3).map((concern, idx) => (
@@ -145,12 +145,12 @@ function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt:
               <li className="text-[9px] text-[#5a5a7a] italic">+{match.match_concerns.length - 3} more concerns</li>
             )}
           </ul>
-        </div>
+        </section>
       )}
 
       {/* Missing facts - max 3 items for cognitive load */}
       {match.missing_facts && match.missing_facts.length > 0 && (
-        <div className="mb-2">
+        <section className="mb-2" aria-label="Missing information from job posting">
           <p className="text-[10px] font-semibold text-[#a78bfa] mb-1">Missing information:</p>
           <ul className="text-[10px] text-[#8080a0] list-disc list-inside space-y-0.5">
             {match.missing_facts.slice(0, 3).map((fact, idx) => (
@@ -160,15 +160,15 @@ function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt:
               <li className="text-[9px] text-[#5a5a7a] italic">+{match.missing_facts.length - 3} more missing</li>
             )}
           </ul>
-        </div>
+        </section>
       )}
 
       {/* Recommended action - max 2 lines for instant clarity */}
       {match.recommended_action && (
-        <div className="mb-2 p-2 bg-white/5 rounded-lg border-l-2 border-[#5b4fff]">
+        <section className="mb-2 p-2 bg-white/5 rounded-lg border-l-2 border-[#5b4fff]" aria-label="Recommended next step">
           <p className="text-[10px] font-semibold text-[#a78bfa] mb-0.5">Safest next step:</p>
           <p className="text-[10px] text-[#eeeef5] leading-relaxed line-clamp-2">{match.recommended_action}</p>
-        </div>
+        </section>
       )}
 
       {/* Fallback to legacy why field */}
@@ -183,6 +183,7 @@ function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt:
             <button
               key={action}
               onClick={() => onAction(`${action} — ${match.title} at ${match.company}`)}
+              aria-label={`${action} for ${match.title} at ${match.company}`}
               className="text-[10px] px-2.5 py-1 rounded-lg border border-white/10 text-[#8080a0] hover:border-[#5b4fff]/40 hover:text-white transition-colors"
             >
               {action}
@@ -190,7 +191,7 @@ function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt:
           ))}
         </div>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -470,7 +471,7 @@ export default function ChatPage() {
 
       <div className="relative z-10 flex flex-col flex-1 h-[calc(100vh-65px)] max-w-3xl w-full mx-auto px-4">
         {/* Messages Container */}
-        <div className="flex-1 overflow-y-auto px-2 py-6 space-y-5 pb-32">
+        <div className="flex-1 overflow-y-auto px-2 py-6 space-y-5 pb-32" role="log" aria-live="polite" aria-atomic="false">
 
           {/* Quick start (shown above first message) */}
           {messages.length <= 1 && !thinking && (
