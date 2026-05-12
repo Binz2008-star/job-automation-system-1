@@ -11,6 +11,7 @@ No business logic lives here — only presentation decisions:
 from __future__ import annotations
 
 import hashlib
+import logging
 from typing import Any, Dict, List, Optional
 
 from src.schemas.agent import (
@@ -21,6 +22,8 @@ from src.schemas.agent import (
     AgentUIType,
     ToolExecutionResult,
 )
+
+logger = logging.getLogger(__name__)
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
@@ -36,40 +39,50 @@ def build_response(
     tool = result.tool_name
     data = result.data or {}
 
-    if tool in ("get_ranked_jobs", "search_jobs"):
-        return _job_list_response(result, data)
+    # Use match statement for cleaner dispatch (Python 3.10+)
+    match tool:
+        case "get_ranked_jobs" | "search_jobs":
+            response = _job_list_response(result, data)
+        case "apply_job":
+            response = _apply_response(result, data, original_action)
+        case "skip_job":
+            response = _skip_response(result, data, original_action)
+        case "save_job":
+            response = _save_response(result, original_action)
+        case "block_company":
+            response = _block_response(result, data, original_action)
+        case "get_application_stats":
+            response = _stats_response(result, data)
+        case "get_pipeline_status":
+            response = _pipeline_status_response(result, data)
+        case "trigger_pipeline":
+            response = _pipeline_trigger_response(result, data)
+        case "get_market_trends":
+            response = _market_insights_response(result, data)
+        case "get_application_strategy":
+            response = _strategy_response(result, data)
+        case "get_learning_profile":
+            response = _learning_profile_response(result, data)
+        case "help":
+            response = _help_response()
+        case _:
+            # Unknown tool — return raw data as text fallback
+            response = AgentUIResponse(
+                message=f"Result from {tool}.",
+                ui=AgentUIComponent(type=AgentUIType.TEXT, data=data),
+                tool_used=tool,
+                success=True,
+            )
 
-    if tool in ("apply_job",):
-        return _apply_response(result, data, original_action)
-
-    if tool in ("skip_job",):
-        return _skip_response(result, data, original_action)
-
-    if tool in ("save_job",):
-        return _save_response(result, original_action)
-
-    if tool in ("block_company",):
-        return _block_response(result, data, original_action)
-
-    if tool == "get_application_stats":
-        return _stats_response(result, data)
-
-    if tool in ("get_pipeline_status",):
-        return _pipeline_status_response(result, data)
-
-    if tool == "trigger_pipeline":
-        return _pipeline_trigger_response(result, data)
-
-    if tool == "help":
-        return _help_response()
-
-    # Unknown tool — return raw data as text fallback
-    return AgentUIResponse(
-        message=f"Result from {tool}.",
-        ui=AgentUIComponent(type=AgentUIType.TEXT, data=data),
-        tool_used=tool,
-        success=True,
+    logger.debug(
+        "build_response",
+        extra={
+            "tool": result.tool_name,
+            "success": result.success,
+            "ui_type": response.ui.type.value if response.ui else "unknown",
+        },
     )
+    return response
 
 
 # ── Individual builders ───────────────────────────────────────────────────────
@@ -77,6 +90,9 @@ def build_response(
 def _job_list_response(result: ToolExecutionResult, data: Dict[str, Any]) -> AgentUIResponse:
     jobs = data.get("jobs", [])
     total = data.get("total", 0)
+    page = data.get("page", 1)
+    page_size = data.get("page_size", 20)
+    has_more = data.get("has_more", False)
 
     if not jobs:
         return AgentUIResponse(
@@ -89,18 +105,29 @@ def _job_list_response(result: ToolExecutionResult, data: Dict[str, Any]) -> Age
     count = len(jobs)
     message = (
         f"Here are your top {count} job match{'es' if count != 1 else ''} "
-        f"(out of {total} total). "
+        f"(page {page} of {((total + page_size - 1) // page_size)}). "
         "Click Apply, Skip, or Save on each card."
     )
 
     actions = _job_actions_for_list(jobs)
+
+    # Add pagination action if more results available
+    if has_more:
+        actions.append(
+            AgentAction(
+                type="load_more",
+                label="Load more jobs",
+                style=ActionStyle.SECONDARY,
+                metadata={"page": page + 1, "page_size": page_size},
+            )
+        )
 
     return AgentUIResponse(
         message=message,
         ui=AgentUIComponent(
             type=AgentUIType.JOB_LIST,
             title=f"Top {count} Matches",
-            data={"jobs": jobs, "total": total},
+            data={"jobs": jobs, "total": total, "page": page, "has_more": has_more},
         ),
         actions=actions,
         tool_used=result.tool_name,
@@ -212,7 +239,8 @@ def _block_response(
     data: Dict[str, Any],
     action: Optional[AgentAction],
 ) -> AgentUIResponse:
-    company = data if isinstance(data, str) else _job_company(action)
+    # Fix: data is always a dict, extract company from it or fallback to action
+    company = data.get("company") or _job_company(action)
     return AgentUIResponse(
         message=(
             f"Blocked **{company}**. Future results from this company will be suppressed. "
@@ -295,12 +323,20 @@ def _pipeline_trigger_response(result: ToolExecutionResult, data: Dict[str, Any]
 
 
 def _error_response(result: ToolExecutionResult) -> AgentUIResponse:
+    error_msg = result.error or "unknown error"
     return AgentUIResponse(
-        message=f"Something went wrong: {result.error or 'unknown error'}",
+        message=f"❌ {error_msg}. Try again or use a different request.",
         ui=AgentUIComponent(
             type=AgentUIType.ERROR,
             data={"error": result.error, "tool": result.tool_name},
         ),
+        actions=[
+            AgentAction(
+                type="help",
+                label="Get Help",
+                style=ActionStyle.SECONDARY,
+            )
+        ],
         tool_used=result.tool_name,
         success=False,
     )
@@ -314,6 +350,9 @@ def _help_response() -> AgentUIResponse:
             "• **Application stats** — progress report\n"
             "• **Pipeline status** — last run info\n"
             "• **Trigger pipeline** — run the job search now\n"
+            "• **Market insights** — UAE market health and trends\n"
+            "• **Application strategy** — personalized application approach\n"
+            "• **Learning profile** — your preferences and inferred roles\n"
             "\nOr click Apply / Skip / Save on any job card."
         ),
         ui=AgentUIComponent(
@@ -325,10 +364,96 @@ def _help_response() -> AgentUIResponse:
                     "Application stats",
                     "Pipeline status",
                     "Trigger pipeline",
+                    "Market insights",
+                    "Application strategy",
+                    "Learning profile",
                 ]
             },
         ),
         tool_used="help",
+        success=True,
+    )
+
+
+def _market_insights_response(result: ToolExecutionResult, data: Dict[str, Any]) -> AgentUIResponse:
+    """Builder for market insights (UAE-specific)."""
+    health = data.get("market_health", {})
+    status = health.get("status", "Unknown")
+    health_score = health.get("health_score", 0)
+    recommendations = data.get("recommendations", [])
+
+    message = (
+        f"Market health: **{status}** (score: {health_score}/100). "
+        f"{recommendations[0] if recommendations else 'No specific recommendations.'}"
+    )
+
+    return AgentUIResponse(
+        message=message,
+        ui=AgentUIComponent(type=AgentUIType.TEXT, data=data),
+        actions=[
+            AgentAction(
+                type="show_strategy",
+                label="View Strategy",
+                style=ActionStyle.SECONDARY,
+            )
+        ],
+        tool_used=result.tool_name,
+        success=True,
+    )
+
+
+def _strategy_response(result: ToolExecutionResult, data: Dict[str, Any]) -> AgentUIResponse:
+    """Builder for application strategy."""
+    strategy = data.get("strategy", {})
+    approach = strategy.get("approach", "Standard")
+    tips = data.get("tips", [])
+
+    message = f"Your recommended application approach: **{approach}**."
+    if tips:
+        message += f" Key tips: {', '.join(tips[:3])}"
+
+    return AgentUIResponse(
+        message=message,
+        ui=AgentUIComponent(type=AgentUIType.TEXT, data=data),
+        actions=[
+            AgentAction(
+                type="show_market_insights",
+                label="View Market Insights",
+                style=ActionStyle.SECONDARY,
+            )
+        ],
+        tool_used=result.tool_name,
+        success=True,
+    )
+
+
+def _learning_profile_response(result: ToolExecutionResult, data: Dict[str, Any]) -> AgentUIResponse:
+    """Builder for learning profile (user preferences)."""
+    role_preferences = data.get("role_preferences", {})
+    top_roles = list(role_preferences.items())[:3] if role_preferences else []
+    skill_confidence = data.get("skill_confidence", {})
+
+    message = f"You've shown interest in **{len(role_preferences)}** roles."
+    if top_roles:
+        roles_str = ", ".join([f"{role} ({score:.1f})" for role, score in top_roles])
+        message += f" Top interests: {roles_str}"
+
+    if skill_confidence:
+        top_skills = sorted(skill_confidence.items(), key=lambda x: x[1], reverse=True)[:3]
+        skills_str = ", ".join([skill for skill, _ in top_skills])
+        message += f". Strong skills: {skills_str}"
+
+    return AgentUIResponse(
+        message=message,
+        ui=AgentUIComponent(type=AgentUIType.TEXT, data=data),
+        actions=[
+            AgentAction(
+                type="update_preferences",
+                label="Update Preferences",
+                style=ActionStyle.SECONDARY,
+            )
+        ],
+        tool_used=result.tool_name,
         success=True,
     )
 
@@ -352,7 +477,12 @@ def _deterministic_action_id(action_type: str, job: Dict[str, Any]) -> str:
     SHA-256[:12] of "type:link".
     The same action on the same job always produces the same action_id,
     enabling idempotency checks in the audit repository.
+
+    Fallback to composite key if link is missing to prevent collisions.
     """
     link = (job.get("link") or "").strip()
+    # Use composite key if link is empty to prevent collisions
+    if not link:
+        link = f"{job.get('id', '')}:{job.get('title', '')}:{job.get('company', '')}"
     key = f"{action_type}:{link}"
     return hashlib.sha256(key.encode()).hexdigest()[:12]
