@@ -474,17 +474,94 @@ class RicoChatAPI:
             src = self.SOURCE_HF if hf_text else self.SOURCE_FALLBACK
             return self._finalize(response, src, profile=profile)
 
-        # Fallback: unknown intent — use HF for natural reply or templated fallback
+        # Fallback: unknown intent — check for role-like message with CV profile
+        # If profile has CV data and message looks like a role, trigger search immediately
+        if self._has_cv_profile(profile):
+            # Extract potential role from message
+            words = message.strip().split()
+            # If message is short and looks like a role (no digits, reasonable length)
+            if len(words) <= 6 and not any(ch.isdigit() for ch in message) and len(message.strip()) >= 2:
+                potential_role = message.strip()
+                # Trigger immediate search with this role
+                return self._finalize(
+                    self._target_role_search_response(user_id, potential_role, profile),
+                    self.SOURCE_KEYWORD,
+                    profile=profile,
+                )
+
+        # Otherwise, use HF for natural reply or templated fallback
         user_context = self._build_openai_context(profile)
 
-        # If profile has years_experience or cv_status=parsed, add instruction to skip asking about experience
-        if self._has_cv_profile(profile):
-            if isinstance(user_context, dict):
-                user_context["skip_experience_question"] = True
+        # Deterministic suppression: never ask about fields that already exist in profile
+        blocked_questions = self._get_blocked_questions(profile)
+        if isinstance(user_context, dict):
+            user_context["blocked_questions"] = blocked_questions
 
         ai_response = self._get_openai_agent().respond(message, user_context=user_context)
+
+        # Post-process AI response to remove any blocked questions that slipped through
+        ai_response["message"] = self._remove_blocked_questions(ai_response.get("message", ""), blocked_questions)
+
         self.memory.append_chat_message(user_id, "assistant", ai_response.get("message", ""))
         return self._finalize(ai_response, self._source_for_openai_response(ai_response), profile=profile)
+
+    def _get_blocked_questions(self, profile: Any) -> List[str]:
+        """Return list of question types that should not be asked based on profile data."""
+        blocked = []
+        if profile is None:
+            return blocked
+
+        # Check for years_experience
+        if self._profile_value(profile, "years_experience") or self._profile_value(profile, "cv_status") == "parsed":
+            blocked.append("experience")
+
+        # Check for preferred_cities
+        if self._profile_value(profile, "preferred_cities") or self._profile_value(profile, "cities"):
+            blocked.append("location")
+
+        # Check for skills or industries
+        if self._profile_value(profile, "skills") or self._profile_value(profile, "industries"):
+            blocked.append("industry")
+
+        return blocked
+
+    def _remove_blocked_questions(self, response: str, blocked_questions: List[str]) -> str:
+        """Remove blocked question patterns from AI response."""
+        if not response or not blocked_questions:
+            return response
+
+        lines = response.split("\n")
+        filtered_lines = []
+        skip_next = False
+
+        for line in lines:
+            lower_line = line.lower()
+
+            # Skip if line contains blocked question patterns
+            should_skip = False
+            for blocked in blocked_questions:
+                if blocked == "experience" and any(pattern in lower_line for pattern in [
+                    "experience level", "years experience", "entry/mid/senior", "experience?"
+                ]):
+                    should_skip = True
+                    break
+                elif blocked == "location" and any(pattern in lower_line for pattern in [
+                    "location", "city", "where", "uae city"
+                ]):
+                    should_skip = True
+                    break
+                elif blocked == "industry" and any(pattern in lower_line for pattern in [
+                    "industry", "sector", "field"
+                ]):
+                    should_skip = True
+                    break
+
+            if should_skip:
+                continue
+
+            filtered_lines.append(line)
+
+        return "\n".join(filtered_lines).strip()
 
     @staticmethod
     def _build_router_context(user_id: str, profile: Any) -> dict:
