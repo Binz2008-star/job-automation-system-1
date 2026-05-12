@@ -1,6 +1,7 @@
 "use client";
 
 import { DashboardShell } from "@/components/DashboardShell";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { StatusCard } from "@/components/StatusCard";
 import { ToastContainer } from "@/components/ui/Toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,11 +13,11 @@ import { useEffect, useState } from "react";
 function Row({ label, value, ok }: { label: string; value: string; ok?: boolean }) {
   return (
     <div className="flex items-center justify-between py-3 border-b border-white/5 last:border-0">
-      <span className="text-[13px] text-[#5a5a7a]">{label}</span>
-      <span className={`text-[13px] font-medium flex items-center gap-1.5 ${ok === true ? "text-[#00c9a7]" : ok === false ? "text-[#ff5e5b]" : "text-[#8080a0]"
+      <span className="text-[13px] text-rico-text-dim">{label}</span>
+      <span className={`text-[13px] font-medium flex items-center gap-1.5 ${ok === true ? "text-rico-teal" : ok === false ? "text-rico-red" : "text-rico-text-muted"
         }`}>
-        {ok === true && <span className="w-1.5 h-1.5 rounded-full bg-[#00c9a7]" />}
-        {ok === false && <span className="w-1.5 h-1.5 rounded-full bg-[#ff5e5b]" />}
+        {ok === true && <span className="w-1.5 h-1.5 rounded-full bg-rico-teal" />}
+        {ok === false && <span className="w-1.5 h-1.5 rounded-full bg-rico-red" />}
         {value}
       </span>
     </div>
@@ -80,14 +81,11 @@ export default function SettingsPage() {
   const isMock = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
   return (
-    <DashboardShell>
-      {/* Header */}
-      <div className="px-8 py-6 border-b border-white/5 bg-[rgba(7,7,18,0.7)] backdrop-blur-md sticky top-0 z-10">
-        <h1 className="font-['Cabinet_Grotesk',sans-serif] font-black text-[22px] tracking-tight">System Logic</h1>
-        <p className="text-[13px] text-[#5a5a7a] mt-0.5">System configuration and job matching preferences</p>
-      </div>
-
-      <div className="p-8 max-w-3xl flex flex-col gap-8 animate-in fade-in duration-500">
+    <DashboardShell
+      title="System Logic"
+      subtitle="System configuration and job matching preferences"
+    >
+      <div className="max-w-3xl flex flex-col gap-8">
 
         {/* Automation Tuning — Rico Cards */}
         {settings && (
@@ -141,23 +139,11 @@ export default function SettingsPage() {
                 <div key={i} className="h-10 rounded-lg bg-white/[0.03] animate-pulse" />
               ))}
             </div>
-          ) : error === "auth" ? (
-            <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
-              <span className="text-4xl opacity-25">🔒</span>
-              <p className="text-[14px] text-[#5a5a7a]">Session expired</p>
-              <a
-                href="/login"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[rgba(91,79,255,0.15)] text-[#a78bfa] border border-[rgba(91,79,255,0.25)] text-[13px] font-semibold hover:bg-[rgba(91,79,255,0.25)] transition-all"
-              >
-                Log in again
-              </a>
-            </div>
-          ) : error === "other" ? (
-            <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
-              <span className="text-4xl opacity-25">⚠️</span>
-              <p className="text-[14px] text-[#5a5a7a]">Could not load settings</p>
-              <p className="text-[12px] text-[#5a5a7a]">The backend may be unavailable.</p>
-            </div>
+          ) : error ? (
+            <ErrorState
+              variant={error === "auth" ? "auth" : "network"}
+              onRetry={() => { setError(null); setLoadingSettings(true); getSettings().then(setSettings).catch(() => setError("other")).finally(() => setLoadingSettings(false)); }}
+            />
           ) : settings ? (
             <div className="flex flex-col gap-4">
               <div className="grid grid-cols-2 gap-4">
@@ -197,7 +183,7 @@ export default function SettingsPage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="self-start px-4 py-2 rounded-lg bg-[rgba(91,79,255,0.15)] text-[#a78bfa] border border-[rgba(91,79,255,0.25)] text-[13px] font-semibold hover:bg-[rgba(91,79,255,0.25)] transition-all disabled:opacity-40"
+                className="self-start px-4 py-2 rounded-lg bg-rico-accent-muted text-rico-purple border border-rico-accent-border text-[13px] font-semibold hover:bg-rico-accent/25 transition-all disabled:opacity-40"
               >
                 {saving ? "Saving…" : "Save settings"}
               </button>

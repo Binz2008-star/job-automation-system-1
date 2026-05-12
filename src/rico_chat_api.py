@@ -16,9 +16,12 @@ from typing import Any, NamedTuple
 # Standard library imports first
 # Third-party imports (none currently)
 # Local imports
+from src.agent.intelligence.intent_classifier import classify_intent, IntentResult
 from src.agent.intelligence.normalizer import normalize_role
 from src.agent.intelligence.recommender import recommend_adjacent_roles
+from src.agent.intelligence.role_classifier import classify_role_candidate
 from src.agent.intelligence.scorer import score_profile_fit
+from src.agent.responses.schema import RicoResponse, build_error_response, _generate_debug_id
 from src.agent.runtime import agent_runtime
 from src.models.onboarding import ONBOARDING_IN_PROGRESS
 from src.rico_agent import RicoAgent
@@ -346,7 +349,18 @@ class RicoChatAPI:
             profile = upsert_profile(user_id=user_id, updates={"target_roles": target_roles})
 
         workflow_result = self.system.run_for_profile(profile)
-        top_matches = workflow_result.get("matches", [])[:5]
+        all_matches = workflow_result.get("matches", [])
+
+        # Filter out already-applied jobs
+        try:
+            from src.applications import is_applied_batch, get_job_id
+            if all_matches:
+                applied_map = is_applied_batch(all_matches)
+                all_matches = [m for m in all_matches if not applied_map.get(get_job_id(m), False)]
+        except Exception as e:
+            logger.debug("Applied-job filter unavailable: %s", e)
+
+        top_matches = all_matches[:5]
         formatted = [self._format_match(m, profile) for m in top_matches]
 
         skills = self._as_list(self._profile_value(profile, "skills"))[:8]
@@ -448,6 +462,23 @@ class RicoChatAPI:
         return base_message
 
     def process_message(self, user_id: str, message: str) -> dict[str, Any]:
+        debug_id = _generate_debug_id()
+        try:
+            result = self._process_message_inner(user_id, message)
+            # Guarantee debug_id on every response
+            if isinstance(result, dict):
+                result.setdefault("debug_id", debug_id)
+                result.setdefault("success", True)
+            return result
+        except Exception as exc:
+            return build_error_response(
+                "Something went wrong processing your message.",
+                debug_id=debug_id,
+                log_exc=exc,
+                user_id=user_id,
+            )
+
+    def _process_message_inner(self, user_id: str, message: str) -> dict[str, Any]:
         self._append_chat(user_id, "user", message)
         completed = is_onboarding_complete(user_id)
 
@@ -481,16 +512,44 @@ class RicoChatAPI:
         return self._handle_active_user(user_id, message)
 
     def _handle_active_user(self, user_id: str, message: str) -> dict[str, Any]:
+        """Intent-first active-user handler.
+
+        Pipeline:
+          1. Classify intent (never defaults to job search)
+          2. Route by intent
+          3. For role-like text, use 3-tier role classifier
+          4. Unknown / nonsense → clarification, not search
+        """
         profile = get_profile(user_id)
-        lower = message.lower()
+        has_cv = self._has_cv_profile(profile)
 
-        # ── Always-on fast paths (before router) ──────────────────────────────
+        # ── Step 1: Unified intent classification ────────────────────────────
+        intent_result = classify_intent(message, has_cv_profile=has_cv)
+        intent = intent_result.intent
 
-        if any(phrase in lower for phrase in self._WHATS_NEXT_PHRASES):
+        logger.info(
+            "rico_intent user=%s intent=%s confidence=%.2f source=%s",
+            user_id, intent, intent_result.confidence, intent_result.source,
+        )
+
+        # ── Step 2: Route by intent ──────────────────────────────────────────
+
+        # Help / menu
+        if intent == "help":
             self._append_chat(user_id, "assistant", self._JOB_SEARCH_OPTIONS)
             return self._finalize(self._JOB_SEARCH_OPTIONS, self.SOURCE_KEYWORD, profile=profile)
 
-        if any(phrase in lower for phrase in ["skip this question", "don't know", "do not know"]):
+        # Smalltalk
+        if intent == "smalltalk":
+            response = {
+                "type": "clarification",
+                "message": "Hi! I am Rico, your job search assistant. Tell me a role to search, upload your CV, or say 'help' for options.",
+            }
+            self._append_chat(user_id, "assistant", response["message"])
+            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
+
+        # Onboarding skip
+        if intent == "onboarding_answer":
             response = {
                 "type": "profile_skip",
                 "message": (
@@ -502,39 +561,108 @@ class RicoChatAPI:
             self._append_chat(user_id, "assistant", response["message"])
             return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
 
-        if any(phrase in lower for phrase in ["extract", "from the cv", "take it from", "use my cv", "use the cv"]):
+        # CV upload / parse — but if CV is already parsed, don't restart wizard
+        if intent == "cv_upload_or_parse":
+            cv_status = self._profile_value(profile, "cv_status")
+            if cv_status == "parsed" or self._profile_value(profile, "manual_profile_wizard_disabled"):
+                response = {
+                    "type": "profile_summary",
+                    "message": (
+                        "Your CV is already parsed and your profile is set up. "
+                        "You can say 'show my profile' to review it, or tell me a role to search."
+                    ),
+                }
+                self._append_chat(user_id, "assistant", response["message"])
+                return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
             return self._finalize(
                 self._cv_first_profile_response(user_id, message),
                 self.SOURCE_KEYWORD,
                 profile=profile,
             )
 
-        if self._looks_like_cv_upload(message):
+        # Profile summary
+        if intent == "profile_summary":
+            from src.agent.context.resolver import resolve_profile_context
+            try:
+                ctx = resolve_profile_context(user_id)
+                prof_dict = profile_to_dict(ctx.profile) if ctx.profile else {}
+            except Exception:
+                prof_dict = profile_to_dict(profile) if profile else {}
+            response = {
+                "type": "profile_summary",
+                "message": "Here is your current profile.",
+                "profile": prof_dict,
+            }
+            self._append_chat(user_id, "assistant", response["message"])
+            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
+
+        # Application tracking — route to applications repo, NOT job search
+        if intent == "application_tracking":
             return self._finalize(
-                self._cv_first_profile_response(user_id, message),
+                self._handle_application_tracking(user_id),
                 self.SOURCE_KEYWORD,
                 profile=profile,
             )
 
-        if self._has_cv_profile(profile) and self._looks_like_bare_target_role(message):
+        # Profile-match job search (use CV/profile, not a named role)
+        if intent == "job_search_profile_match":
+            if not has_cv:
+                response = {
+                    "type": "clarification",
+                    "message": (
+                        "I don't have enough profile data yet to find matching jobs. "
+                        "Upload your CV or tell me your target role, skills, and preferred city."
+                    ),
+                }
+                self._append_chat(user_id, "assistant", response["message"])
+                return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
+            # Use profile target roles for search
+            target_roles = self._as_list(self._profile_value(profile, "target_roles"))
+            role = target_roles[0] if target_roles else "your profile"
             return self._finalize(
-                self._target_role_search_response(user_id, message.strip(), profile),
+                self._target_role_search_response(user_id, role, profile),
                 self.SOURCE_KEYWORD,
                 profile=profile,
             )
 
-        # ── Intent router ─────────────────────────────────────────────────────
+        # Role change — extract role and classify
+        if intent == "role_change" and intent_result.extracted_role:
+            return self._finalize(
+                self._classified_role_search(user_id, intent_result.extracted_role, profile),
+                self.SOURCE_KEYWORD,
+                profile=profile,
+            )
 
-        context = self._build_router_context(user_id, profile)
-        routed = _route(message, user_id=user_id, context=context)
+        # Explicit job search (regex-matched "find ... jobs" etc.)
+        if intent == "job_search_explicit":
+            # Fall through to legacy router for entity extraction
+            context = self._build_router_context(user_id, profile)
+            routed = _route(message, user_id=user_id, context=context)
+            workflow_result = self.system.run_for_profile(profile)
+            all_explicit = workflow_result.get("matches", [])
+            try:
+                from src.applications import is_applied_batch, get_job_id
+                if all_explicit:
+                    app_map = is_applied_batch(all_explicit)
+                    all_explicit = [m for m in all_explicit if not app_map.get(get_job_id(m), False)]
+            except Exception:
+                pass
+            top_matches = all_explicit[:5]
+            formatted = [self._format_match(m, profile) for m in top_matches]
+            response = {
+                "type": "job_matches",
+                "intent": "search_jobs",
+                "message": "I found {} strong UAE job matches for you.".format(len(top_matches)),
+                "matches": formatted,
+                "entities": routed.entities,
+            }
+            self._append_chat(user_id, "assistant", response)
+            return self._finalize(response, routed.source, profile=profile)
 
-        # Help / menu
-        if routed.intent == "help":
-            self._append_chat(user_id, "assistant", self._JOB_SEARCH_OPTIONS)
-            return self._finalize(self._JOB_SEARCH_OPTIONS, self.SOURCE_KEYWORD, profile=profile)
-
-        # apply_job: gate on explicit confirmation before touching agent_runtime
-        if routed.intent == "apply_job":
+        # Apply job — confirmation gate
+        if intent == "apply_job":
+            context = self._build_router_context(user_id, profile)
+            routed = _route(message, user_id=user_id, context=context)
             response = {
                 "type": "confirmation_required",
                 "intent": "apply_job",
@@ -547,42 +675,62 @@ class RicoChatAPI:
             self._append_chat(user_id, "assistant", response["message"])
             return self._finalize(response, routed.source, profile=profile)
 
-        # Tool-executable intents: delegate to agent_runtime
-        if routed.tool_name and routed.intent not in {"search_jobs", "update_preferences", "prepare_interview", "unknown"}:
-            job_key = routed.tool_args.get("job_key", "")
-            result = agent_runtime.handle_action(
-                user_id=user_id,
-                action=routed.intent.replace("_job", "").replace("_message", ""),
-                job_key=job_key,
-                source="chat",
-            )
-            response = {
-                "type": routed.intent,
-                "intent": routed.intent,
-                "message": result.message,
-                "entities": routed.entities,
-                "confidence": routed.confidence,
-            }
-            self._append_chat(user_id, "assistant", result.message)
-            return self._finalize(response, routed.source, profile=profile)
+        # Save job
+        if intent == "save_job":
+            context = self._build_router_context(user_id, profile)
+            routed = _route(message, user_id=user_id, context=context)
+            if routed.tool_name:
+                job_key = routed.tool_args.get("job_key", "")
+                result = agent_runtime.handle_action(
+                    user_id=user_id, action="save", job_key=job_key, source="chat",
+                )
+                response = {
+                    "type": "save_job",
+                    "intent": "save_job",
+                    "message": result.message,
+                    "entities": routed.entities,
+                }
+                self._append_chat(user_id, "assistant", result.message)
+                return self._finalize(response, routed.source, profile=profile)
 
-        # search_jobs: run workflow with extracted entities
-        if routed.intent == "search_jobs":
-            workflow_result = self.system.run_for_profile(profile)
-            top_matches = workflow_result.get("matches", [])[:5]
-            formatted = [self._format_match(m, profile) for m in top_matches]
-            response = {
-                "type": "job_matches",
-                "intent": "search_jobs",
-                "message": "I found {} strong UAE job matches for you.".format(len(top_matches)),
-                "matches": formatted,
-                "entities": routed.entities,
-            }
-            self._append_chat(user_id, "assistant", response)
-            return self._finalize(response, routed.source, profile=profile)
+        # Explain match
+        if intent == "explain_match":
+            context = self._build_router_context(user_id, profile)
+            routed = _route(message, user_id=user_id, context=context)
+            if routed.tool_name:
+                job_key = routed.tool_args.get("job_key", "")
+                result = agent_runtime.handle_action(
+                    user_id=user_id, action="why", job_key=job_key, source="chat",
+                )
+                response = {
+                    "type": "explain_match",
+                    "intent": "explain_match",
+                    "message": result.message,
+                }
+                self._append_chat(user_id, "assistant", result.message)
+                return self._finalize(response, routed.source, profile=profile)
 
-        # update_preferences: apply extracted entities to profile
-        if routed.intent == "update_preferences":
+        # Draft message
+        if intent == "draft_message":
+            context = self._build_router_context(user_id, profile)
+            routed = _route(message, user_id=user_id, context=context)
+            if routed.tool_name:
+                job_key = routed.tool_args.get("job_key", "")
+                result = agent_runtime.handle_action(
+                    user_id=user_id, action="draft", job_key=job_key, source="chat",
+                )
+                response = {
+                    "type": "draft_message",
+                    "intent": "draft_message",
+                    "message": result.message,
+                }
+                self._append_chat(user_id, "assistant", result.message)
+                return self._finalize(response, routed.source, profile=profile)
+
+        # Profile update
+        if intent == "profile_update":
+            context = self._build_router_context(user_id, profile)
+            routed = _route(message, user_id=user_id, context=context)
             prefs = routed.tool_args.get("preferences", {})
             if prefs:
                 upsert_profile(user_id=user_id, updates=prefs)
@@ -594,8 +742,8 @@ class RicoChatAPI:
             self._append_chat(user_id, "assistant", response["message"])
             return self._finalize(response, routed.source, profile=profile)
 
-        # prepare_interview: use HF for richer content
-        if routed.intent == "prepare_interview":
+        # Interview prep
+        if intent == "interview_prep":
             user_context = self._build_openai_context(profile)
             system_prompt = (
                 "You are Rico, a UAE career coach. Give concise, practical interview preparation "
@@ -613,36 +761,118 @@ class RicoChatAPI:
             src = self.SOURCE_HF if hf_text else self.SOURCE_FALLBACK
             return self._finalize(response, src, profile=profile)
 
-        # Fallback: unknown intent — check for role-like message with CV profile
-        # If profile has CV data and message looks like a role, trigger search immediately
-        if self._has_cv_profile(profile):
-            # Extract potential role from message
-            words = message.strip().split()
-            # If message is short and looks like a role (no digits, reasonable length)
-            if len(words) <= 6 and not any(ch.isdigit() for ch in message) and len(message.strip()) >= 2:
-                potential_role = message.strip()
-                # Trigger immediate search with this role
-                return self._finalize(
-                    self._target_role_search_response(user_id, potential_role, profile),
-                    self.SOURCE_KEYWORD,
-                    profile=profile,
-                )
+        # Nonsense — do NOT search
+        if intent == "nonsense":
+            response = {
+                "type": "clarification",
+                "message": (
+                    "I could not understand that message. "
+                    "Try telling me a job role to search, or say 'help' for options."
+                ),
+            }
+            self._append_chat(user_id, "assistant", response["message"])
+            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
 
-        # Otherwise, use HF for natural reply or templated fallback
+        # ── Step 3: Unknown intent — try role classification, then clarify ───
+        # Only attempt role search if message looks like a plausible role (short text, no digits)
+        if has_cv and self._looks_like_bare_target_role(message):
+            return self._finalize(
+                self._classified_role_search(user_id, message.strip(), profile),
+                self.SOURCE_KEYWORD,
+                profile=profile,
+            )
+
+        # Final fallback: use AI for natural reply, but never treat as job search
         user_context = self._build_openai_context(profile)
-
-        # Deterministic suppression: never ask about fields that already exist in profile
         blocked_questions = self._get_blocked_questions(profile)
         if isinstance(user_context, dict):
             user_context["blocked_questions"] = blocked_questions
 
         ai_response = self._get_openai_agent().respond(message, user_context=user_context)
-
-        # Post-process AI response to remove any blocked questions that slipped through
         ai_response["message"] = self._remove_blocked_questions(ai_response.get("message", ""), blocked_questions)
 
         self._append_chat(user_id, "assistant", ai_response.get("message", ""))
         return self._finalize(ai_response, self._source_for_openai_response(ai_response), profile=profile)
+
+    # ── New intent-specific handlers ─────────────────────────────────────────
+
+    def _handle_application_tracking(self, user_id: str) -> dict[str, Any]:
+        """Route application tracking requests to the applications repository."""
+        try:
+            from src.repositories.applications_repo import get_all, get_stats
+            apps = get_all(user_id=user_id)
+            stats = get_stats(user_id=user_id)
+        except Exception:
+            # Fallback to legacy file-based store
+            from src.applications import get_applied_jobs, get_application_stats
+            apps = get_applied_jobs()
+            stats = get_application_stats()
+
+        if not apps:
+            return {
+                "type": "application_status",
+                "message": (
+                    "You have no tracked applications yet. "
+                    "When you apply to a job through Rico, I will track it here. "
+                    "You can also say 'mark as applied' on any job."
+                ),
+                "applications": [],
+            }
+
+        total = stats.get("total_applied", len(apps))
+        interviews = stats.get("interviews_scheduled", 0)
+        msg = f"You have {total} tracked application(s)"
+        if interviews:
+            msg += f", including {interviews} with interview scheduled"
+        msg += "."
+
+        return {
+            "type": "application_status",
+            "message": msg,
+            "applications": apps[:20],
+        }
+
+    def _classified_role_search(self, user_id: str, role_text: str, profile: Any) -> dict[str, Any]:
+        """Use 3-tier role classifier before searching.
+
+        - profile_relevant → search directly
+        - known_but_off_profile → ask confirmation
+        - unknown → clarify / redirect
+        """
+        classification, canonical_role = classify_role_candidate(role_text, profile)
+
+        if classification == "profile_relevant" and canonical_role:
+            return self._target_role_search_response(user_id, canonical_role, profile)
+
+        if classification == "known_but_off_profile" and canonical_role:
+            response = {
+                "type": "clarification",
+                "message": (
+                    f"'{canonical_role}' is a real role, but it does not look close to your CV profile. "
+                    f"Should I search for {canonical_role} jobs anyway? Reply YES or tell me a different role."
+                ),
+                "options": [
+                    {"action": "confirm_search", "label": f"Yes, search {canonical_role}"},
+                    {"action": "show_profile_roles", "label": "Show roles from my CV"},
+                ],
+            }
+            self._append_chat(user_id, "assistant", response["message"])
+            return response
+
+        # unknown role
+        target_roles = self._as_list(self._profile_value(profile, "target_roles"))
+        suggestion = ""
+        if target_roles:
+            suggestion = f" Based on your CV, I can search for: {', '.join(str(r) for r in target_roles[:3])}."
+        response = {
+            "type": "clarification",
+            "message": (
+                f"I do not recognize '{role_text}' as a job role.{suggestion} "
+                "Try a specific role title, or say 'help' for options."
+            ),
+        }
+        self._append_chat(user_id, "assistant", response["message"])
+        return response
 
     def _get_recent_messages(self, user_id: str, limit: int = MAX_CONTEXT_MESSAGES) -> list[dict[str, str]]:
         """Get recent messages for context, respecting token limits."""

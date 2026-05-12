@@ -52,6 +52,7 @@ from src.rico_openai_runtime import call_openai_minimal
 from src.rico_env import get_ai_provider
 import src.services.chat_service as chat_service
 from src.rico_openai_agent import RicoOpenAIAgent
+from src.agent.responses.schema import build_error_response
 
 logger = logging.getLogger(__name__)
 _UTC = timezone.utc
@@ -403,17 +404,12 @@ def rico_chat(request: Request, payload: RicoChatRequest) -> dict[str, Any]:
         _metrics.record_request((time.time() - start_time) * 1000)
         return result
     except Exception as exc:
-        logger.error("Chat endpoint failed", extra={"user_id": user_id if "user_id" in locals() else "unknown", "error": str(exc)})
         _metrics.record_request((time.time() - start_time) * 1000)
-        return {
-            "success": False,
-            "type": "error",
-            "message": "I encountered an error processing your request. Please try again.",
-            "error": str(exc),
-            "response_source": "error",
-            "provider": "error",
-            "provider_state": "error",
-        }
+        return build_error_response(
+            "I encountered an error processing your request. Please try again.",
+            log_exc=exc,
+            user_id=user_id if "user_id" in locals() else "unknown",
+        )
 
 
 @router.post("/chat/public", response_model=PublicChatResponse)
@@ -443,14 +439,18 @@ def rico_chat_public(request: Request, payload: RicoPublicChatRequest) -> Public
         _metrics.record_request((time.time() - start_time) * 1000)
         return response
     except Exception as exc:
-        logger.error("Public chat endpoint failed", extra={"session_id": payload.session_id[:16], "error": str(exc)})
         _metrics.record_request((time.time() - start_time) * 1000)
+        err = build_error_response(
+            "I encountered an error processing your request. Please try again.",
+            log_exc=exc,
+            user_id=f"public:{payload.session_id[:16]}",
+        )
         return PublicChatResponse(
-            message="I encountered an error processing your request. Please try again.",
+            message=err["message"],
             type="error",
             matches=None,
             options=None,
-            next_action=None,
+            next_action=err.get("debug_id"),
         )
 
 

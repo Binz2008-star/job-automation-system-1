@@ -1,45 +1,50 @@
 "use client";
 
 import { DashboardShell } from "@/components/DashboardShell";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { ErrorState } from "@/components/shared/ErrorState";
+import { LoadingState } from "@/components/shared/LoadingState";
 import { StatusCard } from "@/components/StatusCard";
 import { fetchSavedSearches, type SavedSearch } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export default function SavedSearchesPage() {
   const [searches, setSearches] = useState<SavedSearch[]>([]);
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadSearches = useCallback(() => {
+    setError(false);
+    setLoading(true);
     fetchSavedSearches()
       .then((r) => setSearches(r.searches))
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    loadSearches();
+  }, [loadSearches]);
+
   return (
     <DashboardShell title="Saved Searches">
       <div className="max-w-2xl">
-        {loading && (
-          <StatusCard title="Saved searches" badge="pending">
-            <p className="text-sm text-[#5a5a7a]">Loading…</p>
-          </StatusCard>
-        )}
+        {loading && <LoadingState variant="card" message="Loading saved searches…" />}
 
         {!loading && error && (
-          <StatusCard title="Saved searches" badge="error">
-            <p className="text-sm text-[#5a5a7a]">
-              Could not load saved searches. Make sure you are signed in.
-            </p>
-          </StatusCard>
+          <ErrorState
+            variant="network"
+            onRetry={loadSearches}
+          />
         )}
 
         {!loading && !error && searches.length === 0 && (
-          <StatusCard title="Saved searches" badge="live" value="0">
-            <p className="text-sm text-[#5a5a7a]">
-              No saved searches yet. Use the Rico chat to save a job search.
-            </p>
-          </StatusCard>
+          <EmptyState
+            title="No saved searches yet"
+            description="Use the Rico chat to save a job search."
+            actionLabel="Open chat"
+            actionHref="/chat"
+          />
         )}
 
         {!loading && !error && searches.length > 0 && (
@@ -52,12 +57,12 @@ export default function SavedSearchesPage() {
               {searches.map((s) => (
                 <li
                   key={s.id}
-                  className="flex items-start justify-between gap-3 rounded-lg bg-[rgba(255,255,255,0.03)] px-3 py-2.5"
+                  className="flex items-start justify-between gap-3 rounded-lg bg-white/[0.03] px-3 py-2.5"
                 >
-                  <span className="text-sm text-[#eeeef5] break-all">
+                  <span className="text-sm text-rico-text break-all">
                     {s.query}
                   </span>
-                  <span className="shrink-0 text-xs text-[#5a5a7a] mt-0.5">
+                  <span className="shrink-0 text-xs text-rico-text-dim mt-0.5">
                     {new Date(s.created_at).toLocaleDateString()}
                   </span>
                 </li>

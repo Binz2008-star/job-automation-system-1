@@ -12,12 +12,12 @@ from src.schemas.agent import ToolExecutionResult
 logger = logging.getLogger(__name__)
 
 
-def get_application_stats() -> ToolExecutionResult:
-    """Return aggregate application statistics from the tracker."""
+def get_application_stats(user_id: str) -> ToolExecutionResult:
+    """Return aggregate application statistics from the tracker for a specific user."""
     start = time.monotonic()
     try:
         from src.repositories.applications_repo import get_stats
-        data = get_stats()
+        data = get_stats(user_id=user_id)
         elapsed = int((time.monotonic() - start) * 1000)
         logger.info("tool_executed name=get_application_stats duration_ms=%d success=True", elapsed)
         return ToolExecutionResult(
