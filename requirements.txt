@@ -32,3 +32,5 @@ openai>=1.0.0
 diskcache>=5.6.3
 # rapidfuzz for fuzzy string matching in role intelligence scoring
 rapidfuzz>=2.0.0
+# spacy for NLP entity extraction in context resolver
+spacy>=3.7.0
