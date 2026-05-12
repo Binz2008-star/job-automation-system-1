@@ -101,6 +101,19 @@ _PROFILE_SUMMARY_PHRASES = frozenset([
     "what do you know about me", "my details",
 ])
 
+_PROFILE_ROLE_SUGGESTIONS_PHRASES = frozenset([
+    "show roles from my cv",
+    "what roles fit my cv",
+    "roles from my cv",
+    "suggest roles from my cv",
+    "best roles for my profile",
+    "what jobs match my cv",
+    "what roles match my profile",
+    "suggest roles for me",
+    "role suggestions",
+    "what roles should i apply for",
+])
+
 _SKIP_PHRASES = frozenset([
     "skip this question", "don't know", "do not know", "skip",
     "not sure", "pass", "next question",
@@ -214,6 +227,9 @@ def classify_intent(message: str, *, has_cv_profile: bool = False) -> IntentResu
 
     if lower in _PROFILE_SUMMARY_PHRASES:
         return IntentResult("profile_summary", 1.0, "exact")
+
+    if lower in _PROFILE_ROLE_SUGGESTIONS_PHRASES:
+        return IntentResult("profile_role_suggestions", 1.0, "exact")
 
     if lower in _SKIP_PHRASES:
         return IntentResult("onboarding_answer", 0.9, "exact")

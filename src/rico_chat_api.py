@@ -596,6 +596,14 @@ class RicoChatAPI:
             self._append_chat(user_id, "assistant", response["message"])
             return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
 
+        # Profile role suggestions - deterministic fast path based on CV skills/certifications
+        if intent == "profile_role_suggestions":
+            return self._finalize(
+                self._handle_profile_role_suggestions(profile),
+                self.SOURCE_KEYWORD,
+                profile=profile,
+            )
+
         # Application tracking — route to applications repo, NOT job search
         if intent == "application_tracking":
             return self._finalize(
@@ -819,18 +827,127 @@ class RicoChatAPI:
                 "applications": [],
             }
 
-        total = stats.get("total_applied", len(apps))
-        interviews = stats.get("interviews_scheduled", 0)
-        msg = f"You have {total} tracked application(s)"
-        if interviews:
-            msg += f", including {interviews} with interview scheduled"
-        msg += "."
-
         return {
             "type": "application_status",
-            "message": msg,
-            "applications": apps[:20],
+            "message": f"Tracking {len(apps)} application(s).",
+            "applications": apps,
+            "stats": stats,
         }
+
+    def _handle_profile_role_suggestions(self, profile: Any) -> dict[str, Any]:
+        """Generate deterministic role suggestions based on CV skills/certifications.
+
+        Fast path: no OpenAI, no job search, just profile data → role mapping.
+        """
+        if not profile:
+            return {
+                "type": "profile_role_suggestions",
+                "message": "I need your CV or profile data to suggest roles. Upload your CV first.",
+                "options": [],
+                "next_action": "upload_cv"
+            }
+
+        # Extract profile data
+        skills = self._as_list(self._profile_value(profile, "skills"))
+        certifications = self._as_list(self._profile_value(profile, "certifications"))
+        years_experience = self._profile_value(profile, "years_experience")
+        industries = self._as_list(self._profile_value(profile, "industries"))
+
+        # Map skills/certifications to role families
+        suggestions = self._generate_role_suggestions(skills, certifications, years_experience, industries)
+
+        if not suggestions:
+            return {
+                "type": "profile_role_suggestions",
+                "message": "Your profile doesn't have enough specific skills or certifications to suggest roles yet.",
+                "options": [],
+                "next_action": "add_skills"
+            }
+
+        return {
+            "type": "profile_role_suggestions",
+            "message": f"Based on your CV, here are {len(suggestions)} role suggestions that match your skills:",
+            "options": suggestions,
+            "next_action": "select_role_to_search"
+        }
+
+    def _generate_role_suggestions(
+        self,
+        skills: list[str],
+        certifications: list[str],
+        years_experience: float | None,
+        industries: list[str]
+    ) -> list[dict[str, str]]:
+        """Generate role suggestions based on profile data."""
+        suggestions = []
+        skill_lower = [s.lower() for s in skills]
+        cert_lower = [c.lower() for c in certifications]
+
+        # Role family mappings based on skills/certifications
+        role_mappings = {
+            # HSE/Safety roles
+            "hse": ["HSE Officer", "HSE Manager", "Safety Officer", "QHSE Coordinator"],
+            "safety": ["Safety Officer", "Safety Manager", "HSE Officer"],
+            "qhse": ["QHSE Coordinator", "QHSE Manager", "HSE Manager"],
+
+            # Environmental roles
+            "environmental": ["Environmental Officer", "Environmental Manager", "Environmental Specialist"],
+            "sustainability": ["Sustainability Officer", "ESG Specialist", "Sustainability Manager"],
+            "esg": ["ESG Specialist", "Sustainability Officer", "ESG Manager"],
+
+            # Compliance/Audit roles
+            "compliance": ["Compliance Officer", "Compliance Manager", "Regulatory Affairs"],
+            "audit": ["Internal Auditor", "External Auditor", "Audit Manager"],
+            "iso": ["ISO Coordinator", "ISO 14001 Specialist", "Quality Manager"],
+
+            # Operations roles
+            "operations": ["Operations Manager", "Operations Coordinator", "Facilities Manager"],
+
+            # General management
+            "management": ["Operations Manager", "Project Manager", "Team Lead"],
+        }
+
+        # Add seniority prefix based on experience
+        seniority_prefix = ""
+        if years_experience:
+            if years_experience >= 10:
+                seniority_prefix = "Senior "
+            elif years_experience >= 5:
+                seniority_prefix = ""
+
+        # Generate suggestions based on skill matches
+        for skill, roles in role_mappings.items():
+            if any(skill in s for s in skill_lower):
+                for role in roles:
+                    # Check if already added
+                    if not any(s["label"] == role for s in suggestions):
+                        reason = f"Matches your {skill} background"
+                        if years_experience and years_experience >= 5:
+                            role_with_seniority = f"{seniority_prefix}{role}"
+                        else:
+                            role_with_seniority = role
+                        suggestions.append({
+                            "label": role_with_seniority,
+                            "reason": reason
+                        })
+
+        # Add certification-based suggestions
+        if any("iso" in c for c in cert_lower):
+            if not any(s["label"] == "ISO 14001 Specialist" for s in suggestions):
+                suggestions.append({
+                    "label": "ISO 14001 Specialist",
+                    "reason": "Based on your ISO certification"
+                })
+
+        if any("nebosh" in c for c in cert_lower):
+            if not any(s["label"] == "HSE Manager" for s in suggestions):
+                suggestions.append({
+                    "label": "HSE Manager",
+                    "reason": "Based on your NEBOSH certification"
+                })
+
+        # Limit to top 8 suggestions
+        return suggestions[:8]
 
     def _classified_role_search(self, user_id: str, role_text: str, profile: Any) -> dict[str, Any]:
         """Use 3-tier role classifier before searching.
