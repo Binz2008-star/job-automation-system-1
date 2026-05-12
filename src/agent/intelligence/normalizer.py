@@ -155,45 +155,55 @@ class RoleNormalizer:
         Returns:
             Canonical role title (e.g., "Sales Representative")
         """
-        if not role:
-            return "Unknown"
+        try:
+            if not role or not isinstance(role, str):
+                return "Unknown"
 
-        # Check cache
-        role_lower = role.lower().strip()
-        if role_lower in self._cache:
-            return self._cache[role_lower]
+            # Check cache
+            role_lower = role.lower().strip()
+            if role_lower in self._cache:
+                return self._cache[role_lower]
 
-        # Step 1: Clean the input
-        cleaned = self._clean_input(role)
+            # Step 1: Clean the input
+            cleaned = self._clean_input(role)
 
-        # Step 2: Check direct variant mapping
-        if cleaned.lower() in _ROLE_VARIANTS:
-            canonical = _ROLE_VARIANTS[cleaned.lower()]
+            # Step 2: Check direct variant mapping
+            if cleaned.lower() in _ROLE_VARIANTS:
+                canonical = _ROLE_VARIANTS[cleaned.lower()]
+                self._cache[role_lower] = canonical
+                return canonical
+
+            # Step 3: Strip prefixes and suffixes
+            base_role = self._strip_prefixes_suffixes(cleaned)
+
+            # Step 4: Check variant mapping on base role
+            if base_role.lower() in _ROLE_VARIANTS:
+                canonical = _ROLE_VARIANTS[base_role.lower()]
+                self._cache[role_lower] = canonical
+                return canonical
+
+            # Step 5: Capitalize properly
+            canonical = self._capitalize_properly(base_role)
+
             self._cache[role_lower] = canonical
             return canonical
-
-        # Step 3: Strip prefixes and suffixes
-        base_role = self._strip_prefixes_suffixes(cleaned)
-
-        # Step 4: Check variant mapping on base role
-        if base_role.lower() in _ROLE_VARIANTS:
-            canonical = _ROLE_VARIANTS[base_role.lower()]
-            self._cache[role_lower] = canonical
-            return canonical
-
-        # Step 5: Capitalize properly
-        canonical = self._capitalize_properly(base_role)
-
-        self._cache[role_lower] = canonical
-        return canonical
+        except Exception as e:
+            logger.warning(f"Role normalization failed for '{role}': {e}")
+            return self._capitalize_properly(role) if role else "Unknown"
 
     def _clean_input(self, role: str) -> str:
         """Clean the raw role input."""
-        # Remove special characters
-        cleaned = re.sub(r"[^\w\s\-]", "", role)
-        # Normalize whitespace
-        cleaned = re.sub(r"\s+", " ", cleaned).strip()
-        return cleaned
+        try:
+            if not role:
+                return ""
+            # Remove special characters
+            cleaned = re.sub(r"[^\w\s\-]", "", role)
+            # Normalize whitespace
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+            return cleaned
+        except Exception as e:
+            logger.warning(f"Input cleaning failed for '{role}': {e}")
+            return role or ""
 
     def _strip_prefixes_suffixes(self, role: str) -> str:
         """Strip common prefixes and suffixes."""
@@ -215,13 +225,19 @@ class RoleNormalizer:
 
     def _capitalize_properly(self, role: str) -> str:
         """Capitalize the role title properly."""
-        words = role.split()
-        capitalized = []
-        for word in words:
-            # Capitalize first letter, lowercase rest
-            if word:
-                capitalized.append(word[0].upper() + word[1:].lower())
-        return " ".join(capitalized)
+        try:
+            if not role:
+                return ""
+            words = role.split()
+            capitalized = []
+            for word in words:
+                # Capitalize first letter, lowercase rest
+                if word:
+                    capitalized.append(word[0].upper() + word[1:].lower())
+            return " ".join(capitalized)
+        except Exception as e:
+            logger.warning(f"Capitalization failed for '{role}': {e}")
+            return role.title() if role else ""
 
     def get_variants(self, canonical_role: str) -> List[str]:
         """

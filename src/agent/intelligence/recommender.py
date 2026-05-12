@@ -100,52 +100,67 @@ class AdjacentRoleRecommender:
         Returns:
             List of RoleRecommendation sorted by similarity
         """
-        cache_key = f"{profile.user_id}:{target_role}:{location}:{limit}"
-        if cache_key in self._cache:
-            return self._cache[cache_key]
+        try:
+            if not profile or not target_role:
+                return []
 
-        # Normalize target role
-        normalized_target = normalize_role(target_role)
+            cache_key = f"{profile.user_id}:{target_role}:{location}:{limit}"
+            if cache_key in self._cache:
+                return self._cache[cache_key]
 
-        # Get similar roles from graph
-        similar_roles = _ROLE_SIMILARITY.get(normalized_target, [])
+            # Normalize target role
+            normalized_target = normalize_role(target_role)
 
-        # Score each similar role
-        recommendations: List[RoleRecommendation] = []
-        for similar_role, base_similarity in similar_roles:
-            # Calculate skill overlap
-            shared_skills, missing_skills = self._analyze_skill_overlap(profile, similar_role)
+            # Get similar roles from graph
+            similar_roles = _ROLE_SIMILARITY.get(normalized_target, [])
 
-            # Calculate similarity score (base similarity + skill overlap)
-            skill_overlap_score = len(shared_skills) / max(1, len(profile.skills or []))
-            similarity_score = base_similarity * 0.6 + skill_overlap_score * 0.4
+            if not similar_roles:
+                logger.info(f"No similar roles found for {normalized_target}")
+                return []
 
-            # Generate reason
-            reason = self._generate_reason(normalized_target, similar_role, shared_skills)
+            # Score each similar role
+            recommendations: List[RoleRecommendation] = []
+            for similar_role, base_similarity in similar_roles:
+                try:
+                    # Calculate skill overlap
+                    shared_skills, missing_skills = self._analyze_skill_overlap(profile, similar_role)
 
-            # Score profile fit for this role
-            from src.agent.intelligence.scorer import score_profile_fit
-            fit_score = score_profile_fit(profile, similar_role, location)
+                    # Calculate similarity score (base similarity + skill overlap)
+                    skill_overlap_score = len(shared_skills) / max(1, len(profile.skills or []))
+                    similarity_score = base_similarity * 0.6 + skill_overlap_score * 0.4
 
-            recommendations.append(
-                RoleRecommendation(
-                    canonical_role=similar_role,
-                    similarity_score=similarity_score,
-                    reason=reason,
-                    shared_skills=shared_skills,
-                    missing_skills=missing_skills,
-                    fit_score=fit_score.overall_score,
-                )
-            )
+                    # Generate reason
+                    reason = self._generate_reason(normalized_target, similar_role, shared_skills)
 
-        # Sort by similarity score
-        recommendations.sort(key=lambda r: r.similarity_score, reverse=True)
+                    # Score profile fit for this role
+                    from src.agent.intelligence.scorer import score_profile_fit
+                    fit_score = score_profile_fit(profile, similar_role, location)
 
-        # Limit results
-        recommendations = recommendations[:limit]
+                    recommendations.append(
+                        RoleRecommendation(
+                            canonical_role=similar_role,
+                            similarity_score=similarity_score,
+                            reason=reason,
+                            shared_skills=shared_skills,
+                            missing_skills=missing_skills,
+                            fit_score=fit_score.overall_score,
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to score recommendation for {similar_role}: {e}")
+                    continue
 
-        self._cache[cache_key] = recommendations
-        return recommendations
+            # Sort by similarity score
+            recommendations.sort(key=lambda r: r.similarity_score, reverse=True)
+
+            # Limit results
+            recommendations = recommendations[:limit]
+
+            self._cache[cache_key] = recommendations
+            return recommendations
+        except Exception as e:
+            logger.warning(f"Role recommendation failed for {target_role}: {e}")
+            return []
 
     def _analyze_skill_overlap(
         self,
@@ -153,19 +168,23 @@ class AdjacentRoleRecommender:
         role: str,
     ) -> tuple[List[str], List[str]]:
         """Analyze skill overlap between profile and role."""
-        user_skills = set(skill.lower() for skill in profile.skills or [])
+        try:
+            user_skills = set(skill.lower() for skill in (profile.skills or []))
 
-        requirements = _ROLE_REQUIREMENTS.get(role)
-        if not requirements:
+            requirements = _ROLE_REQUIREMENTS.get(role)
+            if not requirements:
+                return [], []
+
+            role_skills = requirements.required_skills | requirements.preferred_skills
+            role_skills_lower = set(skill.lower() for skill in role_skills)
+
+            shared = [skill for skill in role_skills if skill.lower() in user_skills]
+            missing = [skill for skill in role_skills if skill.lower() not in user_skills]
+
+            return shared, missing
+        except Exception as e:
+            logger.warning(f"Skill overlap analysis failed for {role}: {e}")
             return [], []
-
-        role_skills = requirements.required_skills | requirements.preferred_skills
-        role_skills_lower = set(skill.lower() for skill in role_skills)
-
-        shared = [skill for skill in role_skills if skill.lower() in user_skills]
-        missing = [skill for skill in role_skills if skill.lower() not in user_skills]
-
-        return shared, missing
 
     def _generate_reason(
         self,
@@ -174,14 +193,18 @@ class AdjacentRoleRecommender:
         shared_skills: List[str],
     ) -> str:
         """Generate a reason for the recommendation."""
-        if not shared_skills:
-            return f"{recommended_role} is a common career progression from {current_role}."
+        try:
+            if not shared_skills:
+                return f"{recommended_role} is a common career progression from {current_role}."
 
-        skill_list = ", ".join(shared_skills[:3])
-        return (
-            f"Your {skill_list} skills from {current_role} "
-            f"transfer well to {recommended_role}."
-        )
+            skill_list = ", ".join(shared_skills[:3])
+            return (
+                f"Your {skill_list} skills from {current_role} "
+                f"transfer well to {recommended_role}."
+            )
+        except Exception as e:
+            logger.warning(f"Reason generation failed: {e}")
+            return f"{recommended_role} is a similar role to {current_role}."
 
 
 # Module-level singleton

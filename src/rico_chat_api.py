@@ -264,42 +264,112 @@ class RicoChatAPI:
     }
 
     def _target_role_search_response(self, user_id: str, role: str, profile: Any) -> Dict[str, Any]:
-        target_roles = self._as_list(self._profile_value(profile, "target_roles"))
-        if role and role.lower() not in {str(item).lower() for item in target_roles}:
-            target_roles.append(role)
-            profile = upsert_profile(user_id=user_id, updates={"target_roles": target_roles})
+        try:
+            # Use hardened role normalizer
+            from src.agent.intelligence.normalizer import normalize_role
+            normalized_role = normalize_role(role)
 
-        workflow_result = self.system.run_for_profile(profile)
-        top_matches = workflow_result.get("matches", [])[:5]
-        formatted = [self._format_match(m, profile) for m in top_matches]
+            target_roles = self._as_list(self._profile_value(profile, "target_roles"))
+            if normalized_role and normalized_role.lower() not in {str(item).lower() for item in target_roles}:
+                target_roles.append(normalized_role)
+                profile = upsert_profile(user_id=user_id, updates={"target_roles": target_roles})
 
-        skills = self._as_list(self._profile_value(profile, "skills"))[:8]
-        years = self._profile_value(profile, "years_experience")
-        cities = self._as_list(self._profile_value(profile, "preferred_cities"))
-        city_text = f" in {', '.join(map(str, cities[:2]))}" if cities else " in the UAE"
-        basis = []
-        if years:
-            basis.append(f"~{years} years experience")
-        if skills:
-            basis.append("skills: " + ", ".join(map(str, skills[:6])))
-        basis_text = " using your CV profile" + (f" ({'; '.join(basis)})" if basis else "")
+            workflow_result = self.system.run_for_profile(profile)
+            top_matches = workflow_result.get("matches", [])[:5]
+            formatted = [self._format_match(m, profile) for m in top_matches]
 
-        message = (
-            f"Got it — I will target {role} roles{city_text}{basis_text}. "
-            f"I found {len(top_matches)} current strong matches."
-            if top_matches
-            else f"Got it — I will target {role} roles{city_text}{basis_text}. I did not find strong matches yet, so I will keep scanning and use this profile for future matches."
-        )
+            skills = self._as_list(self._profile_value(profile, "skills"))[:8]
+            years = self._profile_value(profile, "years_experience")
+            cities = self._as_list(self._profile_value(profile, "preferred_cities"))
+            city_text = f" in {', '.join(map(str, cities[:2]))}" if cities else " in the UAE"
+            basis = []
+            if years:
+                basis.append(f"~{years} years experience")
+            if skills:
+                basis.append("skills: " + ", ".join(map(str, skills[:6])))
+            basis_text = " using your CV profile" + (f" ({'; '.join(basis)})" if basis else "")
 
-        response = {
-            "type": "job_matches",
-            "intent": "search_jobs",
-            "message": message,
-            "matches": formatted,
-            "entities": {"job_title": role, "from_cv_profile": True},
-        }
-        self.memory.append_chat_message(user_id, "assistant", json.dumps(response))
-        return response
+            # Use hardened role intelligence for fit scoring and recommendations
+            from src.agent.intelligence.scorer import score_profile_fit
+            from src.agent.intelligence.recommender import recommend_adjacent_roles
+            from src.rico_agent import RicoProfile
+
+            # Convert profile to RicoProfile if needed
+            try:
+                rico_profile = RicoProfile(
+                    user_id=user_id,
+                    skills=skills or [],
+                    years_experience=years,
+                    preferred_cities=cities or [],
+                    industries=self._as_list(self._profile_value(profile, "industries")) or []
+                )
+
+                # Score profile fit
+                fit_score = score_profile_fit(rico_profile, normalized_role)
+
+                # Get adjacent role recommendations if fit is weak
+                adjacent_roles = []
+                if fit_score.overall_score < 0.6:
+                    adjacent_roles = recommend_adjacent_roles(rico_profile, normalized_role, limit=3)
+
+                # Build response with role intelligence data
+                message = (
+                    f"Got it — I will target {normalized_role} roles{city_text}{basis_text}. "
+                    f"I found {len(top_matches)} current strong matches."
+                    if top_matches
+                    else f"Got it — I will target {normalized_role} roles{city_text}{basis_text}. "
+                )
+
+                # Add adjacent role recommendations if available
+                if adjacent_roles and fit_score.overall_score < 0.6:
+                    role_names = [r.canonical_role for r in adjacent_roles[:3]]
+                    message += f" Your CV is also strong for {', '.join(role_names)} roles. I'll search those too if needed."
+                elif not top_matches:
+                    message += " I did not find strong matches yet, so I will keep scanning and use this profile for future matches."
+
+                response = {
+                    "type": "job_matches",
+                    "intent": "search_jobs",
+                    "message": message,
+                    "matches": formatted,
+                    "entities": {"job_title": normalized_role, "from_cv_profile": True},
+                    "role_intelligence": {
+                        "normalized_role": normalized_role,
+                        "fit_score": fit_score.overall_score,
+                        "adjacent_roles": [{"role": r.canonical_role, "similarity": r.similarity_score, "reason": r.reason} for r in adjacent_roles]
+                    } if adjacent_roles else None
+                }
+            except Exception as e:
+                # Fallback to original behavior if role intelligence fails
+                import logging
+                logging.warning(f"Role intelligence integration failed: {e}")
+                message = (
+                    f"Got it — I will target {normalized_role} roles{city_text}{basis_text}. "
+                    f"I found {len(top_matches)} current strong matches."
+                    if top_matches
+                    else f"Got it — I will target {normalized_role} roles{city_text}{basis_text}. I did not find strong matches yet, so I will keep scanning and use this profile for future matches."
+                )
+                response = {
+                    "type": "job_matches",
+                    "intent": "search_jobs",
+                    "message": message,
+                    "matches": formatted,
+                    "entities": {"job_title": normalized_role, "from_cv_profile": True},
+                }
+
+            self.memory.append_chat_message(user_id, "assistant", json.dumps(response))
+            return response
+        except Exception as e:
+            import logging
+            logging.error(f"Target role search response failed: {e}")
+            # Return basic response on error
+            return {
+                "type": "job_matches",
+                "intent": "search_jobs",
+                "message": f"I'll search for {role} roles.",
+                "matches": [],
+                "entities": {"job_title": role, "from_cv_profile": True},
+            }
 
     def process_message(self, user_id: str, message: str) -> Dict[str, Any]:
         self.memory.append_chat_message(user_id, "user", message)
