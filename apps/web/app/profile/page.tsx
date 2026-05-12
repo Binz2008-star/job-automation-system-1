@@ -1,14 +1,17 @@
 "use client";
 
 import { DashboardShell } from "@/components/DashboardShell";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { ErrorState } from "@/components/shared/ErrorState";
+import { LoadingState } from "@/components/shared/LoadingState";
 import { StatusCard } from "@/components/StatusCard";
 import { fetchProfile, type ProfileResponse } from "@/lib/api";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 function Tag({ label }: { label: string }) {
   return (
-    <span className="rounded-md bg-[rgba(255,255,255,0.06)] px-2 py-0.5 text-xs text-[#8080a0]">
+    <span className="rounded-md bg-white/[0.06] px-2 py-0.5 text-xs text-rico-text-muted">
       {label}
     </span>
   );
@@ -17,7 +20,7 @@ function Tag({ label }: { label: string }) {
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <dt className="text-[#5a5a7a]">{label}</dt>
+      <dt className="text-rico-text-dim">{label}</dt>
       <dd>{children}</dd>
     </div>
   );
@@ -25,11 +28,11 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 function ChatCTA({ message }: { message: string }) {
   return (
-    <div className="rounded-lg border border-[rgba(91,79,255,0.18)] bg-[rgba(91,79,255,0.05)] px-4 py-3">
-      <p className="mb-2 text-sm text-[#5a5a7a]">{message}</p>
+    <div className="rounded-lg border border-rico-accent-border bg-rico-accent/[0.05] px-4 py-3">
+      <p className="mb-2 text-sm text-rico-text-dim">{message}</p>
       <Link
         href="/chat"
-        className="inline-block rounded-lg bg-[#5b4fff] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#4a3fe0]"
+        className="inline-block rounded-lg bg-rico-accent px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-rico-accent-hover"
       >
         Open Rico chat →
       </Link>
@@ -41,7 +44,7 @@ function ChatEditCTA({ prompt }: { prompt: string }) {
   return (
     <Link
       href={`/chat?prompt=${encodeURIComponent(prompt)}`}
-      className="ml-2 text-[11px] text-[#a78bfa] hover:text-[#c4b5fd] transition-colors underline underline-offset-2"
+      className="ml-2 text-[11px] text-rico-purple hover:text-[#c4b5fd] transition-colors underline underline-offset-2"
     >
       Edit
     </Link>
@@ -156,7 +159,9 @@ export default function ProfilePage() {
   const [error, setError] = useState<"auth" | "other" | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadProfile = useCallback(() => {
+    setError(null);
+    setLoading(true);
     fetchProfile()
       .then(setProfile)
       .catch((err: unknown) => {
@@ -166,76 +171,36 @@ export default function ProfilePage() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
   return (
     <DashboardShell title="Profile">
       <div className="max-w-2xl">
-        {loading && (
-          <StatusCard title="Profile" badge="pending">
-            <p className="text-sm text-[#5a5a7a]">Loading…</p>
-          </StatusCard>
-        )}
+        {loading && <LoadingState variant="card" message="Loading profile…" />}
 
-        {!loading && error === "auth" && (
-          <StatusCard title="Profile" badge="error">
-            <p className="mb-3 text-sm text-[#5a5a7a]">Session expired. Please sign in again.</p>
-            <Link
-              href="/login"
-              className="inline-block rounded-lg bg-[#5b4fff] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#4a3fe0]"
-            >
-              Sign in →
-            </Link>
-          </StatusCard>
-        )}
-
-        {!loading && error === "other" && (
-          <StatusCard title="Profile" badge="error">
-            <p className="mb-3 text-sm text-[#5a5a7a]">
-              Could not load your profile. The backend may be temporarily unavailable.
-            </p>
-            <button
-              onClick={() => { setError(null); setLoading(true); fetchProfile().then(setProfile).catch(() => setError("other")).finally(() => setLoading(false)); }}
-              className="text-xs text-[#a78bfa] hover:text-[#c4b5fd] transition-colors underline underline-offset-2"
-            >
-              Try again
-            </button>
-          </StatusCard>
+        {!loading && error && (
+          <ErrorState
+            variant={error === "auth" ? "auth" : "network"}
+            onRetry={loadProfile}
+          />
         )}
 
         {!loading && !error && profile && !profile.profile_exists && (
           <div className="flex flex-col gap-4">
-            <StatusCard title="Profile" badge="pending">
-              <p className="mb-1 text-sm text-[#eeeef5]">No profile set up yet.</p>
-              <p className="mb-4 text-sm text-[#5a5a7a]">
-                Rico builds your profile through a short conversation. Tell it your
-                target role, experience, location, and salary range to get started.
-                You can also use the Quick Start form if you prefer.
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href="/chat"
-                  className="inline-block rounded-lg bg-[#5b4fff] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#4a3fe0]"
-                >
-                  Start setup with Rico →
-                </Link>
-                <a
-                  href="https://form.jotform.com/261278237812056"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-5 py-2.5 text-sm font-medium text-[#8080a0] transition-colors hover:text-[#eeeef5] hover:border-[rgba(255,255,255,0.15)]"
-                >
-                  Quick Start form →
-                </a>
-              </div>
-              <p className="mt-3 text-xs text-[#5a5a7a]">
-                After submitting the Quick Start form, Rico automatically syncs your profile — no extra steps needed. Come back here to confirm.
-              </p>
-            </StatusCard>
+            <EmptyState
+              title="No profile set up yet"
+              description="Rico builds your profile through a short conversation. Tell it your target role, experience, location, and salary range to get started."
+              actionLabel="Start setup with Rico"
+              actionHref="/chat"
+            />
 
-            <div className="rounded-xl border border-[rgba(255,255,255,0.06)] bg-[#13132a]/60 p-5">
-              <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-[#5a5a7a]">
+            <div className="rounded-xl border border-rico-border bg-rico-surface-2/60 p-5">
+              <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-rico-text-dim">
                 What Rico will set up
               </h3>
-              <ul className="flex flex-col gap-2 text-sm text-[#8080a0]">
+              <ul className="flex flex-col gap-2 text-sm text-rico-text-muted">
                 {[
                   "Target roles and preferred job titles",
                   "Preferred cities and remote preferences",
@@ -244,7 +209,7 @@ export default function ProfilePage() {
                   "Visa status and notice period",
                 ].map((item) => (
                   <li key={item} className="flex items-start gap-2">
-                    <span className="mt-0.5 text-[#a78bfa]">·</span>
+                    <span className="mt-0.5 text-rico-purple">·</span>
                     {item}
                   </li>
                 ))}

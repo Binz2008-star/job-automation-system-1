@@ -2,10 +2,14 @@
 
 import { DashboardShell } from "@/components/DashboardShell";
 import { JobCard } from "@/components/jobs/JobCard";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { ErrorState } from "@/components/shared/ErrorState";
+import { LoadingState } from "@/components/shared/LoadingState";
 import { ToastContainer } from "@/components/ui/Toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/useToast";
 import { ApiError, applyJob, getJobs, saveJob, skipJob } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import type { Job } from "@/types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -14,6 +18,12 @@ const SUCCESS_STATUSES = ["applied", "success", "submitted", "saved"];
 const TRACKED_STATUSES = ["saved", "skipped", "already_tracked"];
 
 type Filter = "all" | "high" | "mid";
+
+const FILTER_LABELS: Record<Filter, string> = {
+  all: "All",
+  high: "85%+ match",
+  mid: "65–84%",
+};
 
 export default function JobsPage() {
   const { user } = useAuth();
@@ -81,7 +91,7 @@ export default function JobsPage() {
         if (!SUCCESS_STATUSES.includes(String(result.status ?? "").toLowerCase())) {
           throw new Error(result.message || "Manual apply required for this job.");
         }
-        toast("Application submitted ✓", "success");
+        toast("Application submitted", "success");
         return;
       }
 
@@ -91,7 +101,7 @@ export default function JobsPage() {
           throw new Error(result.message || "Could not save this job.");
         }
         toast(
-          result.status === "already_tracked" ? "Job was already tracked" : "Job saved ✓",
+          result.status === "already_tracked" ? "Job was already tracked" : "Job saved",
           "success"
         );
         return;
@@ -103,7 +113,7 @@ export default function JobsPage() {
           throw new Error(result.message || "Could not ignore this job.");
         }
         toast(
-          result.status === "already_tracked" ? "Job was already tracked" : "Job ignored ✓",
+          result.status === "already_tracked" ? "Job was already tracked" : "Job ignored",
           "success"
         );
         setJobs((prev) => prev.filter((item) => item.job_id !== jobId));
@@ -119,94 +129,57 @@ export default function JobsPage() {
     }
   };
 
+  const filterBar = (
+    <nav className="flex gap-2" aria-label="Job filters">
+      {(Object.keys(FILTER_LABELS) as Filter[]).map((f) => (
+        <button
+          key={f}
+          onClick={() => setFilter(f)}
+          className={cn(
+            "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
+            filter === f
+              ? "bg-rico-accent-muted text-rico-purple border border-rico-accent-border"
+              : "text-rico-text-dim hover:text-rico-text hover:bg-white/[0.04]"
+          )}
+        >
+          {FILTER_LABELS[f]}
+        </button>
+      ))}
+    </nav>
+  );
+
   return (
-    <DashboardShell>
-      <header className="px-8 py-6 border-b border-white/5 bg-[rgba(7,7,18,0.7)] backdrop-blur-md sticky top-0 z-10 flex items-center justify-between">
-        <div>
-          <h1 className="font-['Cabinet_Grotesk',sans-serif] font-black text-[22px] tracking-tight">
-            Job Matches
-          </h1>
-          <p className="text-[13px] text-[#5a5a7a] mt-0.5">
-            {loading ? "Loading…" : `${jobs.length} roles matched your profile today`}
-          </p>
-        </div>
-
-        <nav className="flex gap-2" aria-label="Job filters">
-          {(["all", "high", "mid"] as Filter[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${filter === f
-                ? "bg-[rgba(91,79,255,0.15)] text-[#a78bfa] border border-[rgba(91,79,255,0.25)]"
-                : "text-[#5a5a7a] hover:text-[#eeeef5] hover:bg-[rgba(255,255,255,0.04)]"
-                }`}
-            >
-              {f === "all" ? "All" : f === "high" ? "85%+ match" : "65–84%"}
-            </button>
+    <DashboardShell
+      title="Job Matches"
+      subtitle={loading ? "Loading…" : `${jobs.length} roles matched your profile`}
+      actions={filterBar}
+    >
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <LoadingState key={i} variant="card" />
           ))}
-        </nav>
-      </header>
-
-      <main className="p-8">
-        {loading ? (
-          <div className="grid grid-cols-2 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-52 rounded-2xl bg-[#13132a]/60 animate-pulse border border-[rgba(255,255,255,0.06)]" />
-            ))}
-          </div>
-        ) : error ? (
-          <ErrorState type={error} onRetry={fetchJobs} />
-        ) : filtered.length > 0 ? (
-          <div className="grid grid-cols-2 gap-4">
-            {filtered.map((job) => (
-              <JobCard key={job.job_id} job={job} onAction={handleAction} isSubmitting={submittingId === job.job_id} />
-            ))}
-          </div>
-        ) : (
-          <EmptyState />
-        )}
-      </main>
+        </div>
+      ) : error ? (
+        <ErrorState
+          variant={error === "auth" ? "auth" : "network"}
+          onRetry={fetchJobs}
+        />
+      ) : filtered.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filtered.map((job) => (
+            <JobCard key={job.job_id} job={job} onAction={handleAction} isSubmitting={submittingId === job.job_id} />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title="No matches in this range"
+          description="Try the 'All' filter, or Rico will surface more matches in the next scan."
+          actionLabel={filter !== "all" ? "Show all jobs" : undefined}
+          onAction={filter !== "all" ? () => setFilter("all") : undefined}
+        />
+      )}
       <ToastContainer toasts={toasts} />
     </DashboardShell>
-  );
-}
-
-function ErrorState({ type, onRetry }: { type: "auth" | "other"; onRetry: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
-      <span className="text-5xl opacity-25">{type === "auth" ? "🔒" : "⚠️"}</span>
-      <h2 className="font-['Cabinet_Grotesk',sans-serif] font-700 text-[18px] text-[#5a5a7a]">
-        {type === "auth" ? "Session expired" : "Could not load jobs"}
-      </h2>
-      {type === "auth" ? (
-        <a
-          href="/login"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[rgba(91,79,255,0.15)] text-[#a78bfa] border border-[rgba(91,79,255,0.25)] text-[13px] font-semibold hover:bg-[rgba(91,79,255,0.25)] transition-all"
-        >
-          Log in again
-        </a>
-      ) : (
-        <button
-          onClick={onRetry}
-          className="text-[13px] text-[#a78bfa] underline underline-offset-2 hover:text-white transition-colors"
-        >
-          Try again
-        </button>
-      )}
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
-      <span className="text-5xl opacity-25">🔍</span>
-      <h2 className="font-['Cabinet_Grotesk',sans-serif] font-700 text-[18px] text-[#5a5a7a]">
-        No matches in this range
-      </h2>
-      <p className="text-[13px] text-[#5a5a7a] max-w-xs">
-        Try &quot;All&quot; filter, or Rico will surface more matches in the next scan
-      </p>
-    </div>
   );
 }

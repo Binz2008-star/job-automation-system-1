@@ -41,9 +41,9 @@ async function SystemStatus() {
   if (fetchError || !health) {
     return (
       <StatusCard title="API status" badge="error">
-        <p className="text-sm text-zinc-400">
+        <p className="text-sm text-rico-text-muted">
           Could not reach the backend. Check{" "}
-          <code className="text-zinc-300">NEXT_PUBLIC_RICO_API</code>.
+          <code className="text-rico-text">NEXT_PUBLIC_RICO_API</code>.
         </p>
       </StatusCard>
     );
