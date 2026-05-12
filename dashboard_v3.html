@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description"
+    content="Rico AI Job Search Command Center - Live dashboard for UAE job matching, market intelligence, and application tracking" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Rico AI Command Center | UAE Job Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --card: #1f2937;
+      --muted: #9ca3af;
+      --text: #f9fafb;
+      --line: #374151;
+      --accent: #38bdf8;
+      --good: #22c55e;
+      --mid: #f59e0b;
+      --low: #64748b;
+      --danger: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      background: linear-gradient(135deg, #020617, #111827);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 32px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: flex-start;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 34px;
+      letter-spacing: -0.04em;
+      background: linear-gradient(135deg, #fff, #38bdf8);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+
+    .badge {
+      border: 1px solid var(--line);
+      padding: 10px 14px;
+      border-radius: 999px;
+      color: #d1d5db;
+      background: rgba(255, 255, 255, 0.04);
+      white-space: nowrap;
+      display: inline-block;
+      margin-left: 8px;
+    }
+
+    .source-badge {
+      background: rgba(34, 197, 94, .16);
+      color: #86efac;
+      border-color: #22c55e;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .stats {
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      margin-bottom: 16px;
+    }
+
+    .three {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .two {
+      grid-template-columns: 1fr 1fr;
+      margin-bottom: 16px;
+    }
+
+    .card {
+      background: rgba(31, 41, 55, 0.78);
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, .22);
+      transition: all 0.3s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 25px 50px rgba(0, 0, 0, .3);
+    }
+
+    .stat-label {
+      color: var(--muted);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .stat-value {
+      font-size: 32px;
+      font-weight: 800;
+      margin-top: 8px;
+    }
+
+    .stat-sub {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 6px;
+      min-height: 18px;
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      font-size: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .bar-row {
+      margin: 14px 0;
+    }
+
+    .bar-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      font-size: 14px;
+      margin-bottom: 7px;
+    }
+
+    .bar-bg {
+      height: 9px;
+      background: #0b1220;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--good));
+      border-radius: 999px;
+      transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+    }
+
+    .step {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      background: #111827;
+      transition: all 0.3s ease;
+      text-align: center;
+    }
+
+    .step:hover {
+      background: #1f2937;
+      transform: translateY(-1px);
+    }
+
+    .step strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .step span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 13px 10px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    a {
+      color: #e0f2fe;
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    a:hover {
+      color: #38bdf8;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+
+    .score {
+      font-weight: 800;
+      font-size: 18px;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .very-high {
+      background: rgba(16, 185, 129, .16);
+      color: #10b981;
+    }
+
+    .high {
+      background: rgba(34, 197, 94, .16);
+      color: #86efac;
+    }
+
+    .medium {
+      background: rgba(245, 158, 11, .16);
+      color: #fcd34d;
+    }
+
+    .low {
+      background: rgba(100, 116, 139, .20);
+      color: #cbd5e1;
+    }
+
+    .footer {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 18px;
+      text-align: center;
+    }
+
+    .refresh-btn {
+      background: var(--accent);
+      color: #0f172a;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    .refresh-btn:hover {
+      background: #0ea5e9;
+      transform: translateY(-1px);
+    }
+
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--good), var(--accent));
+      background-size: 200% auto;
+      animation: loading 1.5s ease infinite;
+      z-index: 1000;
+    }
+
+    @keyframes loading {
+      0% {
+        background-position: 0% 50%;
+      }
+
+      100% {
+        background-position: 200% 50%;
+      }
+    }
+
+    @media (max-width:900px) {
+
+      .stats,
+      .two,
+      .three,
+      .pipeline {
+        grid-template-columns: 1fr;
+      }
+
+      .header {
+        flex-direction: column;
+      }
+
+      .container {
+        padding: 20px;
+      }
+
+      .pipeline {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    /* Accessibility: Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container" id="dashboard">
+    <div class="header">
+      <div>
+        <h1>🎯 Job Search Command Center</h1>
+        <div class="subtitle">Live dashboard for pipeline output, match quality, applications, and AI-powered
+          opportunities</div>
+      </div>
+      <div>
+        <div class="badge source-badge" id="dataSource">🗄️ Database</div>
+        <div class="badge" id="timestamp">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid stats" id="statsGrid" aria-live="polite"></div>
+
+    <!-- Pipeline Flow -->
+    <div class="card" style="margin-bottom:16px;">
+      <h2>⚡ Platform Flow <span id="pipelineStatus" style="font-size:12px; color:var(--good);">● Active</span></h2>
+      <div class="pipeline">
+        <div class="step"><strong>1. Fetch</strong><span>Indeed, LinkedIn, Google</span></div>
+        <div class="step"><strong>2. Filter</strong><span>Deduplication + seen jobs</span></div>
+        <div class="step"><strong>3. Score</strong><span>CV-aware match score</span></div>
+        <div class="step"><strong>4. Decide</strong><span>AI probability engine</span></div>
+        <div class="step"><strong>5. Notify</strong><span>Email + Telegram</span></div>
+        <div class="step"><strong>6. Learn</strong><span>Feedback loop</span></div>
+      </div>
+    </div>
+
+    <!-- Top Opportunities Table -->
+    <div class="card" style="margin-bottom:16px;">
+      <h2>🎯 Top 10 Opportunities
+        <button class="refresh-btn" onclick="refreshDashboard()" aria-label="Refresh dashboard">⟳ Refresh</button>
+      </h2>
+      <div style="overflow-x:auto;">
+        <table id="opportunitiesTable">
+          <thead>
+            <tr>
+              <th>Priority</th>
+              <th>Role</th>
+              <th>Company</th>
+              <th>Score</th>
+              <th>Success Prob</th>
+              <th>Location</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="opportunitiesBody" aria-live="polite">
+            <tr>
+              <td colspan="7" style="text-align:center;">Loading opportunities...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Two Column Layout -->
+    <div class="grid two">
+      <div class="card">
+        <h2>🏢 Top Companies</h2>
+        <div id="topCompanies" aria-live="polite"></div>
+      </div>
+      <div class="card">
+        <h2>📍 Top Locations</h2>
+        <div id="topLocations" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <!-- Score Quality & Market Health -->
+    <div class="grid three">
+      <div class="card">
+        <h2>📊 Score Quality</h2>
+        <div id="scoreQuality" aria-live="polite"></div>
+      </div>
+      <div class="card">
+        <h2>💡 Market Health</h2>
+        <div id="marketHealth" aria-live="polite"></div>
+      </div>
+      <div class="card">
+        <h2>🚀 AI Insights</h2>
+        <div id="aiInsights" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <!-- Recent Applications -->
+    <div class="card" style="margin-bottom:16px;">
+      <h2>📋 Recent Applications</h2>
+      <div style="overflow-x:auto;">
+        <table id="applicationsTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Role</th>
+              <th>Company</th>
+              <th>Status</th>
+              <th>Response</th>
+            </tr>
+          </thead>
+          <tbody id="applicationsBody" aria-live="polite">
+            <tr>
+              <td colspan="5" style="text-align:center;">No applications yet</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>© 2024 Rico AI · AI-Native UAE Career Companion · </span>
+      <a href="/privacy" rel="noopener">Privacy</a> ·
+      <a href="/terms" rel="noopener">Terms</a> ·
+      <a href="https://github.com/Binz2008-star/job-automation-system-1" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+
+  <script>
+    // Dashboard state
+    let dashboardData = null;
+    let refreshInterval = null;
+    let apiFailureCount = 0;
+
+    // Refresh dashboard from API
+    async function refreshDashboard() {
+      // Show loading indicator
+      const loadingDiv = document.createElement('div');
+      loadingDiv.className = 'loading-overlay';
+      loadingDiv.setAttribute('role', 'status');
+      loadingDiv.setAttribute('aria-live', 'polite');
+      loadingDiv.setAttribute('aria-label', 'Loading dashboard data');
+      document.body.appendChild(loadingDiv);
+
+      const startTime = performance.now();
+
+      try {
+        // Fetch from your API endpoint
+        const response = await fetch('/api/v1/rico/dashboard?v=2', {
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          // Add timeout for production
+          signal: AbortSignal.timeout(30000)
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+        dashboardData = await response.json();
+        renderDashboard();
+
+        // Reset failure count on success
+        apiFailureCount = 0;
+
+        // Update timestamp
+        document.getElementById('timestamp').innerHTML = `Updated ${new Date().toLocaleTimeString()}`;
+        document.getElementById('dataSource').innerHTML = '🗄️ Live API';
+
+        // Log performance metric (in production: send to analytics)
+        const loadTime = Math.round(performance.now() - startTime);
+        console.log(`Dashboard refresh completed in ${loadTime}ms`);
+
+      } catch (error) {
+        console.error('Dashboard refresh failed:', error);
+        apiFailureCount++;
+
+        // Fallback to mock data after 3 consecutive failures
+        if (apiFailureCount >= 3) {
+          loadMockData();
+          document.getElementById('dataSource').innerHTML = '📊 Mock Data';
+        } else {
+          // Show error state but keep existing data
+          document.getElementById('timestamp').innerHTML = `Error ${new Date().toLocaleTimeString()}`;
+        }
+      } finally {
+        loadingDiv.remove();
+      }
+    }
+
+    // Render all dashboard components
+    function renderDashboard() {
+      if (!dashboardData) return;
+
+      renderStats();
+      renderOpportunities();
+      renderTopCompanies();
+      renderTopLocations();
+      renderScoreQuality();
+      renderMarketHealth();
+      renderAIInsights();
+      renderApplications();
+    }
+
+    // Render stats cards
+    function renderStats() {
+      const stats = dashboardData.stats || {};
+      const statsHtml = `
+    <div class="card stat-card">
+      <div class="stat-label">Relevant Roles</div>
+      <div class="stat-value" style="color: #10b981;">${stats.matchRate || 96.0}%</div>
+      <div class="stat-sub">${stats.matchedJobs || 48}/${stats.totalJobs || 50} jobs match target</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-label">Interview Rate</div>
+      <div class="stat-value" style="color: ${stats.interviewRate > 0 ? '#22c55e' : '#64748b'}">${stats.interviewRate || 0}%</div>
+      <div class="stat-sub">${stats.interviews || 0}/${stats.applications || 0} applications</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-label">Active Applications</div>
+      <div class="stat-value">${stats.activeApplications || 2}</div>
+      <div class="stat-sub">${stats.pendingResponses || 0} awaiting response</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-label">False Positive Rate</div>
+      <div class="stat-value" style="color: ${stats.falsePositiveRate < 10 ? '#22c55e' : '#f59e0b'}">${stats.falsePositiveRate || 4.0}%</div>
+      <div class="stat-sub">Non-relevant filtered out</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-label">Success Probability</div>
+      <div class="stat-value" style="color: #38bdf8">${stats.avgSuccessProb || 72}%</div>
+      <div class="stat-sub">Weighted by match quality</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-label">Market Health</div>
+      <div class="stat-value" style="color: ${stats.marketHealth >= 70 ? '#22c55e' : '#f59e0b'}">${stats.marketHealth || 78}%</div>
+      <div class="stat-sub">${stats.marketTrend || 'Improving +2.3 pts'}</div>
+    </div>
+  `;
+      document.getElementById('statsGrid').innerHTML = statsHtml;
+    }
+
+    // Render top opportunities table
+    function renderOpportunities() {
+      const opportunities = dashboardData.topOpportunities || [];
+      if (!opportunities.length) {
+        document.getElementById('opportunitiesBody').innerHTML = '<tr><td colspan="7" style="text-align:center;">No high-priority opportunities found</td></tr>';
+        return;
+      }
+
+      const rows = opportunities.slice(0, 10).map(job => {
+        const priorityClass = job.priorityScore >= 80 ? 'very-high' : (job.priorityScore >= 65 ? 'high' : 'medium');
+        const probClass = job.successProb >= 70 ? 'very-high' : (job.successProb >= 50 ? 'high' : 'medium');
+        return `
+      <tr>
+        <td><span class="pill ${priorityClass}">${Math.round(job.priorityScore)}</span></td>
+        <td><strong>${escapeHtml(job.title)}</strong></td>
+        <td>${escapeHtml(job.company)}</td>
+        <td><span class="score" style="color:${job.score >= 75 ? '#22c55e' : '#f59e0b'}">${Math.round(job.score)}</span></td>
+        <td><span class="pill ${probClass}">${Math.round(job.successProb)}%</span></td>
+        <td>${escapeHtml(job.location || 'UAE')}</td>
+        <td><a href="${escapeAttr(job.link || '#')}" target="_blank" rel="noopener noreferrer">Apply →</a></td>
+      </tr>
+    `;
+      }).join('');
+
+      document.getElementById('opportunitiesBody').innerHTML = rows;
+    }
+
+    // Render top companies
+    function renderTopCompanies() {
+      const companies = dashboardData.topCompanies || [];
+      const maxCount = companies[0]?.count || 1;
+      const html = companies.slice(0, 10).map(c => `
+    <div class="bar-row">
+      <div class="bar-head"><span>${escapeHtml(c.name)}</span><strong>${c.count}</strong></div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${(c.count / maxCount) * 100}%"></div></div>
+    </div>
+  `).join('');
+      document.getElementById('topCompanies').innerHTML = html || '<div class="muted">No company data available</div>';
+    }
+
+    // Render top locations
+    function renderTopLocations() {
+      const locations = dashboardData.topLocations || [];
+      const maxCount = locations[0]?.count || 1;
+      const html = locations.slice(0, 5).map(l => `
+    <div class="bar-row">
+      <div class="bar-head"><span>${escapeHtml(l.name)}</span><strong>${l.count}</strong></div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${(l.count / maxCount) * 100}%"></div></div>
+    </div>
+  `).join('');
+      document.getElementById('topLocations').innerHTML = html || '<div class="muted">No location data available</div>';
+    }
+
+    // Render score quality distribution
+    function renderScoreQuality() {
+      const quality = dashboardData.scoreQuality || {};
+      const total = Object.values(quality).reduce((a, b) => a + (b.count || 0), 0);
+      const bands = [
+        { name: 'Very High (85+)', key: 'very_high', color: '#10b981' },
+        { name: 'High (75-84)', key: 'high', color: '#86efac' },
+        { name: 'Medium (65-74)', key: 'medium', color: '#fcd34d' },
+        { name: 'Low (40-64)', key: 'low', color: '#94a3b8' }
+      ];
+
+      const html = bands.map(band => {
+        const data = quality[band.key] || { count: 0, percentage: 0 };
+        return `
+      <div class="bar-row">
+        <div class="bar-head"><span>${band.name}</span><strong>${data.count}</strong></div>
+        <div class="bar-bg"><div class="bar-fill" style="width:${data.percentage || 0}%; background:linear-gradient(90deg,${band.color},${band.color})"></div></div>
+      </div>
+    `;
+      }).join('');
+
+      document.getElementById('scoreQuality').innerHTML = html + `<div class="muted" style="margin-top:12px;">Median Score: ${quality.median_score || 72}</div>`;
+    }
+
+    // Render market health
+    function renderMarketHealth() {
+      const health = dashboardData.marketHealth || {};
+      const healthScore = health.health_score || 78;
+      const healthClass = healthScore >= 70 ? 'very-high' : (healthScore >= 50 ? 'high' : 'medium');
+      const statusText = health.status || 'Good';
+
+      const html = `
+    <div style="text-align:center; margin-bottom:16px;">
+      <div class="stat-value" style="color:${healthScore >= 70 ? '#22c55e' : '#f59e0b'}">${healthScore}%</div>
+      <div class="stat-sub">${statusText}</div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-head"><span>Availability</span><strong>${health.job_availability || 65}%</strong></div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${health.job_availability || 65}%"></div></div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-head"><span>Quality Score</span><strong>${health.quality_score || 72}%</strong></div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${health.quality_score || 72}%"></div></div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-head"><span>Competition</span><strong>${health.competition_factor || 35}%</strong></div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${health.competition_factor || 35}%"></div></div>
+    </div>
+  `;
+      document.getElementById('marketHealth').innerHTML = html;
+    }
+
+    // Render AI insights
+    function renderAIInsights() {
+      const insights = dashboardData.aiInsights || {};
+      const recs = insights.recommendations || [];
+      const html = `
+    <div style="margin-bottom:12px;">
+      <div class="stat-label">Strategic Focus</div>
+      <div style="font-size:16px; font-weight:600; margin-top:4px;">${insights.strategicFocus || 'Selective Targeting'}</div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <div class="stat-label">Optimal Daily Apps</div>
+      <div style="font-size:20px; font-weight:700; color:var(--good);">${insights.optimalDailyApps || 3}</div>
+    </div>
+    <div class="stat-label">Action Items</div>
+    <ul style="margin-top:8px; padding-left:20px;">
+      ${recs.slice(0, 3).map(r => `<li style="margin-bottom:6px; font-size:13px;">${escapeHtml(r)}</li>`).join('')}
+      ${recs.length === 0 ? '<li class="muted">Complete profile for personalized insights</li>' : ''}
+    </ul>
+  `;
+      document.getElementById('aiInsights').innerHTML = html;
+    }
+
+    // Render recent applications
+    function renderApplications() {
+      const apps = dashboardData.recentApplications || [];
+      if (!apps.length) {
+        document.getElementById('applicationsBody').innerHTML = '<tr><td colspan="5" style="text-align:center;">No applications yet — start applying from top opportunities!</td></tr>';
+        return;
+      }
+
+      const rows = apps.map(app => `
+    <tr>
+      <td>${app.date || 'N/A'}</td>
+      <td><strong>${escapeHtml(app.role)}</strong></td>
+      <td>${escapeHtml(app.company)}</td>
+      <td><span class="pill ${app.status === 'applied' ? 'high' : 'medium'}">${app.status || 'Applied'}</span></td>
+      <td>${app.response || 'Awaiting reply'}</td>
+    </tr>
+  `).join('');
+      document.getElementById('applicationsBody').innerHTML = rows;
+    }
+
+    // Mock data for demo/fallback
+    function loadMockData() {
+      dashboardData = {
+        stats: {
+          matchRate: 96.0,
+          matchedJobs: 48,
+          totalJobs: 50,
+          interviewRate: 0,
+          activeApplications: 2,
+          falsePositiveRate: 4.0,
+          avgSuccessProb: 72,
+          marketHealth: 78,
+          marketTrend: 'Improving +2.3 pts'
+        },
+        topOpportunities: [
+          { title: 'Senior Operations Manager', company: 'DP World', score: 87, successProb: 81, priorityScore: 85, location: 'Dubai, UAE', link: '#' },
+          { title: 'AI Product Manager', company: 'G42', score: 92, successProb: 78, priorityScore: 86, location: 'Abu Dhabi, UAE', link: '#' },
+          { title: 'Supply Chain Lead', company: 'Emirates Logistics', score: 79, successProb: 72, priorityScore: 76, location: 'Dubai, UAE', link: '#' },
+          { title: 'Tech Operations Manager', company: 'Etisalat', score: 84, successProb: 69, priorityScore: 77, location: 'UAE', link: '#' },
+          { title: 'Business Analyst - Trading', company: 'Algo Trading FZE', score: 76, successProb: 65, priorityScore: 71, location: 'Dubai, UAE', link: '#' }
+        ],
+        topCompanies: [
+          { name: 'DP World', count: 12 }, { name: 'Emirates Group', count: 8 }, { name: 'G42', count: 6 },
+          { name: 'Etisalat', count: 5 }, { name: 'ADNOC', count: 4 }, { name: 'Mubadala', count: 3 }
+        ],
+        topLocations: [
+          { name: 'Dubai, UAE', count: 28 }, { name: 'Abu Dhabi, UAE', count: 15 }, { name: 'Sharjah, UAE', count: 5 }, { name: 'Ajman, UAE', count: 2 }
+        ],
+        scoreQuality: {
+          very_high: { count: 12, percentage: 24 }, high: { count: 18, percentage: 36 },
+          medium: { count: 14, percentage: 28 }, low: { count: 6, percentage: 12 }, median_score: 72
+        },
+        marketHealth: { health_score: 78, status: 'Good', job_availability: 65, quality_score: 72, competition_factor: 35 },
+        aiInsights: {
+          strategicFocus: 'Selective Targeting — you\'re converting well',
+          optimalDailyApps: 3,
+          recommendations: [
+            'Apply to ≤3 roles/day with score ≥75',
+            'Focus on DP World and G42 - high match rates',
+            'Track which companies respond fastest'
+          ]
+        },
+        recentApplications: []
+      };
+      renderDashboard();
+      document.getElementById('timestamp').innerHTML = `Mock Data ${new Date().toLocaleTimeString()}`;
+    }
+
+    // Helper: escape HTML to prevent XSS (SECURITY FIX: escapes quotes and backticks)
+    function escapeHtml(str = '') {
+      return str.replace(/[&<>"'`]/g, s => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+        '`': '&#96;'
+      }[s]));
+    }
+
+    // Auto-refresh every 2 minutes
+    refreshInterval = setInterval(refreshDashboard, 120000);
+
+    // Initial load
+    refreshDashboard();
+
+    // Cleanup on page unload (for SPA scenarios)
+    window.addEventListener('beforeunload', () => {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+    });
+  </script>
+</body>
+
+</html>
+apiFailureCount = 0;
+
+// Update timestamp
+document.getElementById('timestamp').innerHTML = `Updated ${new Date().toLocaleTimeString()}`;
+document.getElementById('dataSource').innerHTML = '🗄️ Live API';
+
+// Log performance metric (in production: send to analytics)
+const loadTime = Math.round(performance.now() - startTime);
+console.log(`Dashboard refresh completed in ${loadTime}ms`);
+
+} catch (error) {
+console.error('Dashboard refresh failed:', error);
+apiFailureCount++;
+
+// Fallback to mock data after 3 consecutive failures
+if (apiFailureCount >= 3) {
+loadMockData();
+document.getElementById('dataSource').innerHTML = '📊 Mock Data';
+} else {
+// Show error state but keep existing data
+document.getElementById('timestamp').innerHTML = `Error ${new Date().toLocaleTimeString()}`;
+}
+} finally {
+loadingDiv.remove();
+}
+}
+
+// Render all dashboard components
+function renderDashboard() {
+if (!dashboardData) return;
+
+renderStats();
+renderOpportunities();
+renderTopCompanies();
+renderTopLocations();
+renderScoreQuality();
+renderMarketHealth();
+renderAIInsights();
+renderApplications();
+}
+
+// Render stats cards
+function renderStats() {
+const stats = dashboardData.stats || {};
+const statsHtml = `
+<div class="card stat-card">
+  <div class="stat-label">Relevant Roles</div>
+  <div class="stat-value" style="color: #10b981;">${stats.matchRate || 96.0}%</div>
+  <div class="stat-sub">${stats.matchedJobs || 48}/${stats.totalJobs || 50} jobs match target</div>
+</div>
+<div class="card stat-card">
+  <div class="stat-label">Interview Rate</div>
+  <div class="stat-value" style="color: ${stats.interviewRate > 0 ? '#22c55e' : '#64748b'}">${stats.interviewRate || 0}%
+  </div>
+  <div class="stat-sub">${stats.interviews || 0}/${stats.applications || 0} applications</div>
+</div>
+<div class="card stat-card">
+  <div class="stat-label">Active Applications</div>
+  <div class="stat-value">${stats.activeApplications || 2}</div>
+  <div class="stat-sub">${stats.pendingResponses || 0} awaiting response</div>
+</div>
+<div class="card stat-card">
+  <div class="stat-label">False Positive Rate</div>
+  <div class="stat-value" style="color: ${stats.falsePositiveRate < 10 ? '#22c55e' : '#f59e0b'}">
+    ${stats.falsePositiveRate || 4.0}%</div>
+  <div class="stat-sub">Non-relevant filtered out</div>
+</div>
+<div class="card stat-card">
+  <div class="stat-label">Success Probability</div>
+  <div class="stat-value" style="color: #38bdf8">${stats.avgSuccessProb || 72}%</div>
+  <div class="stat-sub">Weighted by match quality</div>
+</div>
+<div class="card stat-card">
+  <div class="stat-label">Market Health</div>
+  <div class="stat-value" style="color: ${stats.marketHealth >= 70 ? '#22c55e' : '#f59e0b'}">${stats.marketHealth ||
+    78}%</div>
+  <div class="stat-sub">${stats.marketTrend || 'Improving +2.3 pts'}</div>
+</div>
+`;
+document.getElementById('statsGrid').innerHTML = statsHtml;
+}
+
+// Render top opportunities table
+function renderOpportunities() {
+const opportunities = dashboardData.topOpportunities || [];
+if (!opportunities.length) {
+document.getElementById('opportunitiesBody').innerHTML = '<tr>
+  <td colspan="7" style="text-align:center;">No high-priority opportunities found</td>
+</tr>';
+return;
+}
+
+const rows = opportunities.slice(0, 10).map(job => {
+const priorityClass = job.priorityScore >= 80 ? 'very-high' : (job.priorityScore >= 65 ? 'high' : 'medium');
+const probClass = job.successProb >= 70 ? 'very-high' : (job.successProb >= 50 ? 'high' : 'medium');
+return `
+<tr>
+  <td><span class="pill ${priorityClass}">${Math.round(job.priorityScore)}</span></td>
+  <td><strong>${escapeHtml(job.title)}</strong></td>
+  <td>${escapeHtml(job.company)}</td>
+  <td><span class="score" style="color:${job.score >= 75 ? '#22c55e' : '#f59e0b'}">${Math.round(job.score)}</span></td>
+  <td><span class="pill ${probClass}">${Math.round(job.successProb)}%</span></td>
+  <td>${escapeHtml(job.location || 'UAE')}</td>
+  <td><a href="${escapeAttr(job.link || '#')}" target="_blank" rel="noopener noreferrer">Apply →</a></td>
+</tr>
+`;
+}).join('');
+
+document.getElementById('opportunitiesBody').innerHTML = rows;
+}
+
+// Render top companies
+function renderTopCompanies() {
+const companies = dashboardData.topCompanies || [];
+const maxCount = companies[0]?.count || 1;
+const html = companies.slice(0, 10).map(c => `
+<div class="bar-row">
+  <div class="bar-head"><span>${escapeHtml(c.name)}</span><strong>${c.count}</strong></div>
+  <div class="bar-bg">
+    <div class="bar-fill" style="width:${(c.count / maxCount) * 100}%"></div>
+  </div>
+</div>
+`).join('');
+document.getElementById('topCompanies').innerHTML = html || '<div class="muted">No company data available</div>';
+}
+
+// Render top locations
+function renderTopLocations() {
+const locations = dashboardData.topLocations || [];
+const maxCount = locations[0]?.count || 1;
+const html = locations.slice(0, 5).map(l => `
+<div class="bar-row">
+  <div class="bar-head"><span>${escapeHtml(l.name)}</span><strong>${l.count}</strong></div>
+  <div class="bar-bg">
+    <div class="bar-fill" style="width:${(l.count / maxCount) * 100}%"></div>
+  </div>
+</div>
+`).join('');
+document.getElementById('topLocations').innerHTML = html || '<div class="muted">No location data available</div>';
+}
+
+// Render score quality distribution
+function renderScoreQuality() {
+const quality = dashboardData.scoreQuality || {};
+const total = Object.values(quality).reduce((a, b) => a + (b.count || 0), 0);
+const bands = [
+{ name: 'Very High (85+)', key: 'very_high', color: '#10b981' },
+{ name: 'High (75-84)', key: 'high', color: '#86efac' },
+{ name: 'Medium (65-74)', key: 'medium', color: '#fcd34d' },
+{ name: 'Low (40-64)', key: 'low', color: '#94a3b8' }
+];
+
+const html = bands.map(band => {
+const data = quality[band.key] || { count: 0, percentage: 0 };
+return `
+<div class="bar-row">
+  <div class="bar-head"><span>${band.name}</span><strong>${data.count}</strong></div>
+  <div class="bar-bg">
+    <div class="bar-fill"
+      style="width:${data.percentage || 0}%; background:linear-gradient(90deg,${band.color},${band.color})"></div>
+  </div>
+</div>
+`;
+}).join('');
+
+document.getElementById('scoreQuality').innerHTML = html + `<div class="muted" style="margin-top:12px;">Median Score:
+  ${quality.median_score || 72}</div>`;
+}
+
+// Render market health
+function renderMarketHealth() {
+const health = dashboardData.marketHealth || {};
+const healthScore = health.health_score || 78;
+const healthClass = healthScore >= 70 ? 'very-high' : (healthScore >= 50 ? 'high' : 'medium');
+const statusText = health.status || 'Good';
+
+const html = `
+<div style="text-align:center; margin-bottom:16px;">
+  <div class="stat-value" style="color:${healthScore >= 70 ? '#22c55e' : '#f59e0b'}">${healthScore}%</div>
+  <div class="stat-sub">${statusText}</div>
+</div>
+<div class="bar-row">
+  <div class="bar-head"><span>Availability</span><strong>${health.job_availability || 65}%</strong></div>
+  <div class="bar-bg">
+    <div class="bar-fill" style="width:${health.job_availability || 65}%"></div>
+  </div>
+</div>
+<div class="bar-row">
+  <div class="bar-head"><span>Quality Score</span><strong>${health.quality_score || 72}%</strong></div>
+  <div class="bar-bg">
+    <div class="bar-fill" style="width:${health.quality_score || 72}%"></div>
+  </div>
+</div>
+<div class="bar-row">
+  <div class="bar-head"><span>Competition</span><strong>${health.competition_factor || 35}%</strong></div>
+  <div class="bar-bg">
+    <div class="bar-fill" style="width:${health.competition_factor || 35}%"></div>
+  </div>
+</div>
+`;
+document.getElementById('marketHealth').innerHTML = html;
+}
+
+// Render AI insights
+function renderAIInsights() {
+const insights = dashboardData.aiInsights || {};
+const recs = insights.recommendations || [];
+const html = `
+<div style="margin-bottom:12px;">
+  <div class="stat-label">Strategic Focus</div>
+  <div style="font-size:16px; font-weight:600; margin-top:4px;">${insights.strategicFocus || 'Selective Targeting'}
+  </div>
+</div>
+<div style="margin-bottom:12px;">
+  <div class="stat-label">Optimal Daily Apps</div>
+  <div style="font-size:20px; font-weight:700; color:var(--good);">${insights.optimalDailyApps || 3}</div>
+</div>
+<div class="stat-label">Action Items</div>
+<ul style="margin-top:8px; padding-left:20px;">
+  ${recs.slice(0, 3).map(r => `<li style="margin-bottom:6px; font-size:13px;">${escapeHtml(r)}</li>`).join('')}
+  ${recs.length === 0 ? '<li class="muted">Complete profile for personalized insights</li>' : ''}
+</ul>
+`;
+document.getElementById('aiInsights').innerHTML = html;
+}
+
+// Render recent applications
+function renderApplications() {
+const apps = dashboardData.recentApplications || [];
+if (!apps.length) {
+document.getElementById('applicationsBody').innerHTML = '<tr>
+  <td colspan="5" style="text-align:center;">No applications yet — start applying from top opportunities!</td>
+</tr>';
+return;
+}
+
+const rows = apps.map(app => `
+<tr>
+  <td>${app.date || 'N/A'}</td>
+  <td><strong>${escapeHtml(app.role)}</strong></td>
+  <td>${escapeHtml(app.company)}</td>
+  <td><span class="pill ${app.status === 'applied' ? 'high' : 'medium'}">${app.status || 'Applied'}</span></td>
+  <td>${app.response || 'Awaiting reply'}</td>
+</tr>
+`).join('');
+document.getElementById('applicationsBody').innerHTML = rows;
+}
+
+// Mock data for demo/fallback
+function loadMockData() {
+dashboardData = {
+stats: {
+matchRate: 96.0,
+matchedJobs: 48,
+totalJobs: 50,
+interviewRate: 0,
+activeApplications: 2,
+falsePositiveRate: 4.0,
+avgSuccessProb: 72,
+marketHealth: 78,
+marketTrend: 'Improving +2.3 pts'
+},
+topOpportunities: [
+{ title: 'Senior Operations Manager', company: 'DP World', score: 87, successProb: 81, priorityScore: 85, location:
+'Dubai, UAE', link: '#' },
+{ title: 'AI Product Manager', company: 'G42', score: 92, successProb: 78, priorityScore: 86, location: 'Abu Dhabi,
+UAE', link: '#' },
+{ title: 'Supply Chain Lead', company: 'Emirates Logistics', score: 79, successProb: 72, priorityScore: 76, location:
+'Dubai, UAE', link: '#' },
+{ title: 'Tech Operations Manager', company: 'Etisalat', score: 84, successProb: 69, priorityScore: 77, location: 'UAE',
+link: '#' },
+{ title: 'Business Analyst - Trading', company: 'Algo Trading FZE', score: 76, successProb: 65, priorityScore: 71,
+location: 'Dubai, UAE', link: '#' }
+],
+topCompanies: [
+{ name: 'DP World', count: 12 }, { name: 'Emirates Group', count: 8 }, { name: 'G42', count: 6 },
+{ name: 'Etisalat', count: 5 }, { name: 'ADNOC', count: 4 }, { name: 'Mubadala', count: 3 }
+],
+topLocations: [
+{ name: 'Dubai, UAE', count: 28 }, { name: 'Abu Dhabi, UAE', count: 15 }, { name: 'Sharjah, UAE', count: 5 }, { name:
+'Ajman, UAE', count: 2 }
+],
+scoreQuality: {
+very_high: { count: 12, percentage: 24 }, high: { count: 18, percentage: 36 },
+medium: { count: 14, percentage: 28 }, low: { count: 6, percentage: 12 }, median_score: 72
+},
+marketHealth: { health_score: 78, status: 'Good', job_availability: 65, quality_score: 72, competition_factor: 35 },
+aiInsights: {
+strategicFocus: 'Selective Targeting — you\'re converting well',
+optimalDailyApps: 3,
+recommendations: [
+'Apply to ≤3 roles/day with score ≥75',
+'Focus on DP World and G42 - high match rates',
+'Track which companies respond fastest'
+]
+},
+recentApplications: []
+};
+renderDashboard();
+document.getElementById('timestamp').innerHTML = `Mock Data ${new Date().toLocaleTimeString()}`;
+}
+
+// Helper: escape HTML to prevent XSS (SECURITY FIX: escapes quotes and backticks)
+function escapeHtml(str = '') {
+return str.replace(/[&<>"'`]/g, s => ({
+  '&': '&amp;',
+  '<': '&lt;' , '>' : '&gt;' , '"' : '&quot;' , "'" : '&#39;' , '`' : '&#96;' }[s])); } // Helper: escape attributes for
+    href/src function escapeAttr(str='' ) { return escapeHtml(String(str)).replace(/"/g, '&quot;' ); } // Auto-refresh
+    every 2 minutes refreshInterval=setInterval(refreshDashboard, 120000); // Initial load refreshDashboard(); //
+    Cleanup on page unload (for SPA scenarios) window.addEventListener('beforeunload', ()=> {
+    if (refreshInterval) {
+    clearInterval(refreshInterval);
+    }
+    });
+    </script>
+    </body>
+
+    </html>
