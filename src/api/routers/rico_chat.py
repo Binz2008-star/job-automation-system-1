@@ -258,6 +258,26 @@ async def rico_upload_cv(
         raise HTTPException(status_code=422, detail="Only PDF files are accepted")
     safe_name = _safe_filename(file.filename)
     parsed = chat_service.parse_cv(data, filename=safe_name)
+
+    # Persist extracted CV fields to profile for chat context
+    from src.repositories.profile_repo import upsert_profile
+    from src.repositories.onboarding_repo import mark_onboarding_complete
+    profile_updates = {
+        "email": parsed.get("emails", [None])[0] if parsed.get("emails") else None,
+        "phone": parsed.get("phones", [None])[0] if parsed.get("phones") else None,
+        "skills": parsed.get("skills", []),
+        "years_experience": parsed.get("years_experience_hint"),
+        "cv_filename": safe_name,
+        "cv_status": "parsed",
+        "profile_creation_mode": "cv_first",
+        "manual_profile_wizard_disabled": True,
+    }
+    # Only include non-None values
+    profile_updates = {k: v for k, v in profile_updates.items() if v is not None}
+    upsert_profile(user_id=resolved_user_id, updates=profile_updates)
+    # Mark onboarding complete so chat uses CV profile immediately
+    mark_onboarding_complete(resolved_user_id)
+
     return {
         "user_id": resolved_user_id,
         "filename": safe_name,
