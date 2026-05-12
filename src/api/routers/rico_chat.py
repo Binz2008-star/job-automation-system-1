@@ -41,6 +41,7 @@ router = APIRouter(prefix="/api/v1/rico", tags=["rico"])
 _UNSAFE_CHARS_RE = re.compile(r"[<>\"']")
 _PDF_MAGIC = b"%PDF"
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+_PUBLIC_USER_ID_RE = re.compile(r"^public:web-[a-z0-9-]{8,80}$", re.I)
 
 
 def _safe_filename(name: str | None) -> str:
@@ -50,6 +51,15 @@ def _safe_filename(name: str | None) -> str:
     name = os.path.basename(name)
     name = _UNSAFE_CHARS_RE.sub("", name)
     return name.strip() or "upload"
+
+
+def _is_valid_public_user_id(value: str) -> bool:
+    """Validate that a user_id matches the expected guest session format.
+
+    Rejects arbitrary user_ids to prevent profile overwrite attacks.
+    Only accepts IDs matching pattern: public:web-[a-z0-9-]{8,80}
+    """
+    return bool(_PUBLIC_USER_ID_RE.fullmatch(value or ""))
 
 
 def _validate_jotform_secret(request: Request) -> None:
@@ -72,7 +82,13 @@ def _resolve_upload_user_id(
     query_user_id: str | None,
     form_user_id: str | None,
 ) -> str:
-    """Prefer the authenticated user when present, otherwise accept legacy user_id inputs."""
+    """Resolve user ID for CV upload, allowing authenticated or validated public sessions.
+
+    Rules:
+    - If request has an authenticated user, use authenticated user ID.
+    - Else, accept user_id only when it matches the expected guest session format.
+    - Reject any other unauthenticated user_id to prevent profile overwrite attacks.
+    """
     try:
         return get_current_user_id(request)
     except HTTPException:
@@ -81,6 +97,14 @@ def _resolve_upload_user_id(
     user_id = (query_user_id or form_user_id or "").strip()
     if not user_id:
         raise HTTPException(status_code=422, detail="user_id is required")
+
+    # Validate public session ID format to prevent profile overwrite attacks
+    if not _is_valid_public_user_id(user_id):
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication or valid public session required"
+        )
+
     return user_id
 
 
@@ -260,35 +284,30 @@ async def rico_upload_cv(
     parsed = chat_service.parse_cv(data, filename=safe_name)
 
     # Persist extracted CV fields to profile for chat context
-    # Security: Only persist for authenticated users to prevent profile overwrite attacks
-    try:
-        authenticated_user_id = get_current_user_id(request)
-        from src.repositories.profile_repo import upsert_profile, get_profile
-        from src.repositories.onboarding_repo import mark_onboarding_complete
+    # Security: Persist for authenticated users OR validated public session IDs only
+    from src.repositories.profile_repo import upsert_profile, get_profile
+    from src.repositories.onboarding_repo import mark_onboarding_complete
 
-        # Get existing profile to preserve data
-        existing_profile = get_profile(authenticated_user_id)
-        existing_skills = getattr(existing_profile, "skills", []) if existing_profile else []
+    # Get existing profile to preserve data
+    existing_profile = get_profile(resolved_user_id)
+    existing_skills = getattr(existing_profile, "skills", []) if existing_profile else []
 
-        profile_updates = {
-            "email": parsed.get("emails", [None])[0] if parsed.get("emails") else None,
-            "phone": parsed.get("phones", [None])[0] if parsed.get("phones") else None,
-            # Preserve existing skills if extraction returns empty list
-            "skills": parsed.get("skills", []) if parsed.get("skills") else existing_skills,
-            "years_experience": parsed.get("years_experience_hint"),
-            "cv_filename": safe_name,
-            "cv_status": "parsed",
-            "profile_creation_mode": "cv_first",
-            "manual_profile_wizard_disabled": True,
-        }
-        # Only include non-None values and non-empty lists
-        profile_updates = {k: v for k, v in profile_updates.items() if v not in (None, [], {})}
-        upsert_profile(user_id=authenticated_user_id, updates=profile_updates)
-        # Mark onboarding complete so chat uses CV profile immediately
-        mark_onboarding_complete(authenticated_user_id)
-    except HTTPException:
-        # Unauthenticated user: return parsed data without persisting
-        pass
+    profile_updates = {
+        "email": parsed.get("emails", [None])[0] if parsed.get("emails") else None,
+        "phone": parsed.get("phones", [None])[0] if parsed.get("phones") else None,
+        # Preserve existing skills if extraction returns empty list
+        "skills": parsed.get("skills", []) if parsed.get("skills") else existing_skills,
+        "years_experience": parsed.get("years_experience_hint"),
+        "cv_filename": safe_name,
+        "cv_status": "parsed",
+        "profile_creation_mode": "cv_first",
+        "manual_profile_wizard_disabled": True,
+    }
+    # Only include non-None values and non-empty lists
+    profile_updates = {k: v for k, v in profile_updates.items() if v not in (None, [], {})}
+    upsert_profile(user_id=resolved_user_id, updates=profile_updates)
+    # Mark onboarding complete so chat uses CV profile immediately
+    mark_onboarding_complete(resolved_user_id)
 
     return {
         "user_id": resolved_user_id,
