@@ -194,11 +194,15 @@ def classify_intent(message: str, *, has_cv_profile: bool = False) -> IntentResu
     if not text or len(text) < _MIN_MEANINGFUL_LENGTH:
         return IntentResult("unknown", 0.0, "fallback")
 
-    # ── 1. Nonsense gate ─────────────────────────────────────────────────
+    # ── 1. Exact-phrase fast paths (before any regex) ────────────────────
+    if lower in _SMALLTALK_PHRASES:
+        return IntentResult("smalltalk", 1.0, "exact")
+
+    # ── 1b. Nonsense gate (after smalltalk check) ───────────────────────
     if _NONSENSE_RE.match(text):
         return IntentResult("nonsense", 0.95, "regex")
 
-    # ── 2. Exact-phrase fast paths ───────────────────────────────────────
+    # ── 2. Exact-phrase fast paths (continued) ───────────────────────────
     if lower in _PROFILE_MATCH_PHRASES:
         return IntentResult("job_search_profile_match", 1.0, "exact")
 
@@ -207,9 +211,6 @@ def classify_intent(message: str, *, has_cv_profile: bool = False) -> IntentResu
 
     if lower in _HELP_PHRASES:
         return IntentResult("help", 1.0, "exact")
-
-    if lower in _SMALLTALK_PHRASES:
-        return IntentResult("smalltalk", 1.0, "exact")
 
     if lower in _PROFILE_SUMMARY_PHRASES:
         return IntentResult("profile_summary", 1.0, "exact")
@@ -245,13 +246,15 @@ def classify_intent(message: str, *, has_cv_profile: bool = False) -> IntentResu
         return IntentResult("application_tracking", 0.8, "regex")
 
     # ── 4. Job search patterns ───────────────────────────────────────────
+    # Check explicit job search FIRST (has job/role/position keyword)
+    if _JOB_SEARCH_EXPLICIT_RE.search(text):
+        return IntentResult("job_search_explicit", 0.85, "regex")
+
+    # Role change — only if no explicit job-search keyword present
     role_match = _ROLE_CHANGE_RE.match(text)
     if role_match:
         extracted = role_match.group(2).strip()
         return IntentResult("role_change", 0.9, "regex", extracted_role=extracted)
-
-    if _JOB_SEARCH_EXPLICIT_RE.search(text):
-        return IntentResult("job_search_explicit", 0.85, "regex")
 
     # ── 5. Profile-match inference (only if CV exists) ───────────────────
     # Generic short requests with CV profile → profile match, NOT job search
