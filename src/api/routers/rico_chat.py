@@ -394,13 +394,26 @@ def rico_delete_saved_search(request: Request, search_id: str) -> None:
 def rico_chat(request: Request, payload: RicoChatRequest) -> dict[str, Any]:
     """Authenticated chat endpoint."""
     start_time = time.time()
-    user = get_current_user(request)
-    user_id = user["email"]
+    try:
+        user = get_current_user(request)
+        user_id = user["email"]
 
-    result = chat_service.send_message(user_id=user_id, message=payload.message)
+        result = chat_service.send_message(user_id=user_id, message=payload.message)
 
-    _metrics.record_request((time.time() - start_time) * 1000)
-    return result
+        _metrics.record_request((time.time() - start_time) * 1000)
+        return result
+    except Exception as exc:
+        logger.error("Chat endpoint failed", extra={"user_id": user_id if "user_id" in locals() else "unknown", "error": str(exc)})
+        _metrics.record_request((time.time() - start_time) * 1000)
+        return {
+            "success": False,
+            "type": "error",
+            "message": "I encountered an error processing your request. Please try again.",
+            "error": str(exc),
+            "response_source": "error",
+            "provider": "error",
+            "provider_state": "error",
+        }
 
 
 @router.post("/chat/public", response_model=PublicChatResponse)
@@ -409,25 +422,36 @@ def rico_chat_public(request: Request, payload: RicoPublicChatRequest) -> Public
     """Unauthenticated chat for landing page visitors."""
     start_time = time.time()
 
-    # Sanitize session_id (already validated by Pydantic)
-    safe_sid = payload.session_id[:64]
-    user_id = f"public:{safe_sid}"
+    try:
+        # Sanitize session_id (already validated by Pydantic)
+        safe_sid = payload.session_id[:64]
+        user_id = f"public:{safe_sid}"
 
-    result = chat_service.send_message(user_id=user_id, message=payload.message)
+        result = chat_service.send_message(user_id=user_id, message=payload.message)
 
-    # Strip internal diagnostics from unauthenticated responses
-    stripped_result = _strip_internal_fields(result)
+        # Strip internal diagnostics from unauthenticated responses
+        stripped_result = _strip_internal_fields(result)
 
-    response = PublicChatResponse(
-        message=stripped_result.get("message", ""),
-        type=stripped_result.get("type", "response"),
-        matches=stripped_result.get("matches"),
-        options=stripped_result.get("options"),
-        next_action=stripped_result.get("next_action"),
-    )
+        response = PublicChatResponse(
+            message=stripped_result.get("message", ""),
+            type=stripped_result.get("type", "response"),
+            matches=stripped_result.get("matches"),
+            options=stripped_result.get("options"),
+            next_action=stripped_result.get("next_action"),
+        )
 
-    _metrics.record_request((time.time() - start_time) * 1000)
-    return response
+        _metrics.record_request((time.time() - start_time) * 1000)
+        return response
+    except Exception as exc:
+        logger.error("Public chat endpoint failed", extra={"session_id": payload.session_id[:16], "error": str(exc)})
+        _metrics.record_request((time.time() - start_time) * 1000)
+        return PublicChatResponse(
+            message="I encountered an error processing your request. Please try again.",
+            type="error",
+            matches=None,
+            options=None,
+            next_action=None,
+        )
 
 
 @router.get("/chat/history")

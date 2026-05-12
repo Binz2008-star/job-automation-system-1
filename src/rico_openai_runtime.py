@@ -234,6 +234,8 @@ def _build_client(provider: str):
         kwargs["base_url"] = DEEPSEEK_BASE_URL
     # Disable SDK retries for chat requests - handle 429 explicitly instead
     kwargs["max_retries"] = 0
+    # Set explicit timeout to prevent 21-second hangs
+    kwargs["timeout"] = 15.0
     return OpenAI(**kwargs)
 
 

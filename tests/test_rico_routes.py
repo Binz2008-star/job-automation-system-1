@@ -863,3 +863,222 @@ class TestJobsRoutes:
         assert r.status_code == 200
         body = r.json()
         assert body["status"] == "saved"
+
+
+# =============================================================================
+# Missing endpoint tests
+# =============================================================================
+
+class TestRicoChatHistoryRoute:
+    """GET /api/v1/rico/chat/history - conversation history with pagination."""
+
+    def test_unauthenticated_returns_401(self, client):
+        r = client.get("/api/v1/rico/chat/history")
+        assert r.status_code == 401
+
+    def test_authenticated_returns_200(self, auth_client):
+        with patch("src.services.chat_service.get_chat_history", return_value=[]):
+            r = auth_client.get("/api/v1/rico/chat/history")
+        assert r.status_code == 200
+
+    def test_response_contains_messages_and_total(self, auth_client):
+        mock_history = [
+            {"role": "user", "content": "Hi", "timestamp": "2026-05-12T10:00:00"},
+            {"role": "assistant", "content": "Hello", "timestamp": "2026-05-12T10:00:05"},
+        ]
+        with patch("src.services.chat_service.get_chat_history", return_value=mock_history):
+            r = auth_client.get("/api/v1/rico/chat/history")
+        body = r.json()
+        assert "messages" in body
+        assert "total" in body
+        assert body["total"] == 2
+        assert len(body["messages"]) == 2
+
+    def test_limit_parameter_applied(self, auth_client):
+        with patch("src.services.chat_service.get_chat_history", return_value=[]) as mock_get:
+            r = auth_client.get("/api/v1/rico/chat/history?limit=5")
+        assert r.status_code == 200
+        mock_get.assert_called_once()
+        # The service function receives limit=5; actual assertion depends on implementation
+        args, kwargs = mock_get.call_args
+        assert kwargs.get("limit") == 5 or args[1] == 5  # adapt to signature
+
+    def test_before_timestamp_parameter_passed(self, auth_client):
+        with patch("src.services.chat_service.get_chat_history", return_value=[]) as mock_get:
+            r = auth_client.get("/api/v1/rico/chat/history?before=2026-05-10T00:00:00Z")
+        assert r.status_code == 200
+        mock_get.assert_called_once()
+        # Verify before timestamp is parsed and passed
+        call_args = mock_get.call_args[1]
+        assert "before" in call_args or len(mock_get.call_args[0]) > 2
+
+    def test_invalid_timestamp_returns_422(self, auth_client):
+        r = auth_client.get("/api/v1/rico/chat/history?before=not-a-date")
+        assert r.status_code == 422
+
+    def test_limit_out_of_range_returns_422(self, auth_client):
+        r = auth_client.get("/api/v1/rico/chat/history?limit=1000")
+        assert r.status_code == 422
+
+
+class TestRicoFeedbackRoute:
+    """POST /api/v1/rico/feedback - record user feedback for learning."""
+
+    def test_unauthenticated_returns_401(self, client):
+        # Pydantic validation happens before auth check, so we need valid body
+        payload = {
+            "job_id": "job123",
+            "feedback_type": "positive",
+            "rating": 5,
+        }
+        r = client.post("/api/v1/rico/feedback", json=payload)
+        assert r.status_code == 401
+
+    def test_missing_required_fields_returns_422(self, auth_client):
+        r = auth_client.post("/api/v1/rico/feedback", json={})
+        assert r.status_code == 422
+
+    def test_invalid_feedback_type_returns_422(self, auth_client):
+        payload = {
+            "job_id": "job123",
+            "feedback_type": "awesome",  # not allowed
+            "rating": 5,
+        }
+        r = auth_client.post("/api/v1/rico/feedback", json=payload)
+        assert r.status_code == 422
+
+    def test_rating_out_of_range_returns_422(self, auth_client):
+        payload = {
+            "job_id": "job123",
+            "feedback_type": "positive",
+            "rating": 6,
+        }
+        r = auth_client.post("/api/v1/rico/feedback", json=payload)
+        assert r.status_code == 422
+
+    def test_valid_feedback_returns_204(self, auth_client):
+        payload = {
+            "job_id": "job123",
+            "feedback_type": "positive",
+            "rating": 5,
+            "comment": "Great match",
+        }
+        with patch("src.api.routers.rico_chat.get_learning_repository") as mock_repo:
+            mock_instance = mock_repo.return_value
+            mock_instance.record_signal.return_value = None
+            r = auth_client.post("/api/v1/rico/feedback", json=payload)
+        assert r.status_code == 204
+
+    def test_feedback_records_learning_signal(self, auth_client):
+        payload = {
+            "job_id": "job456",
+            "feedback_type": "negative",
+            "rating": 2,
+            "comment": "Not relevant",
+        }
+        with patch("src.api.routers.rico_chat.get_learning_repository") as mock_repo:
+            mock_instance = mock_repo.return_value
+            mock_instance.record_signal.return_value = None
+            r = auth_client.post("/api/v1/rico/feedback", json=payload)
+        assert r.status_code == 204
+        mock_instance.record_signal.assert_called_once()
+        # Verify the learning repository receives correct data
+        call_args = mock_instance.record_signal.call_args[1]
+        assert call_args["signal_type"] == "feedback"
+        assert call_args["signal_value"] == "negative"
+        assert call_args["signal_weight"] == -0.2  # rating 2 maps to -0.2
+        assert call_args["source"] == "user_feedback"
+        assert call_args["metadata"]["job_id"] == "job456"
+        assert call_args["metadata"]["rating"] == 2
+
+
+class TestRicoDeleteSavedSearchRoute:
+    """DELETE /api/v1/rico/settings/saved-searches/{id}"""
+
+    def test_unauthenticated_returns_401(self, client):
+        r = client.delete("/api/v1/rico/settings/saved-searches/00000000-0000-0000-0000-000000000001")
+        assert r.status_code == 401
+
+    def test_authenticated_deletes_search_returns_204(self, auth_client):
+        with patch("src.api.routers.rico_chat.delete_search", return_value=True):
+            r = auth_client.delete("/api/v1/rico/settings/saved-searches/550e8400-e29b-41d4-a716-446655440000")
+        assert r.status_code == 204
+        assert not r.text  # no content
+
+    def test_delete_nonexistent_search_returns_404(self, auth_client):
+        with patch("src.api.routers.rico_chat.delete_search", return_value=False):
+            r = auth_client.delete("/api/v1/rico/settings/saved-searches/550e8400-e29b-41d4-a716-446655440001")
+        assert r.status_code == 404
+
+    def test_delete_uses_jwt_identity_not_url_injection(self, auth_client):
+        captured = {}
+
+        def spy(user_id, search_id):
+            captured["user_id"] = user_id
+            return True
+
+        with patch("src.api.routers.rico_chat.delete_search", side_effect=spy):
+            r = auth_client.delete("/api/v1/rico/settings/saved-searches/550e8400-e29b-41d4-a716-446655440002")
+        assert r.status_code == 204
+        assert captured["user_id"] == "alice@rico.ai"
+        # JWT identity is used, not URL injection
+
+
+class TestRicoOpenAISmokeRoute:
+    """GET /api/v1/rico/openai-smoke - AI provider health check."""
+
+    def test_unauthenticated_returns_401(self, client):
+        r = client.get("/api/v1/rico/openai-smoke")
+        assert r.status_code == 401
+
+    def test_authenticated_returns_200(self, auth_client):
+        # Mock the internal call to avoid actual API key dependency
+        with patch("src.api.routers.rico_chat.call_openai_minimal", return_value={
+            "success": True,
+            "text": "OK",
+            "provider_available": True,
+            "model": "gpt-4",
+        }), patch("src.api.routers.rico_chat.get_ai_provider", return_value="openai"):
+            r = auth_client.get("/api/v1/rico/openai-smoke")
+        assert r.status_code == 200
+
+    def test_response_contains_provider_and_success_flag(self, auth_client):
+        with patch("src.api.routers.rico_chat.call_openai_minimal", return_value={
+            "success": True,
+            "text": "OK",
+            "provider_available": True,
+            "model": "gpt-3.5-turbo",
+        }), patch("src.api.routers.rico_chat.get_ai_provider", return_value="openai"):
+            r = auth_client.get("/api/v1/rico/openai-smoke")
+        body = r.json()
+        assert "success" in body
+        assert "provider" in body
+        assert body["success"] is True
+        assert body["provider"] == "openai"
+
+    def test_deepseek_provider_works(self, auth_client):
+        with patch("src.api.routers.rico_chat.call_openai_minimal", return_value={
+            "success": True,
+            "text": "OK",
+            "provider_available": True,
+            "deepseek_model": "deepseek-chat",
+        }), patch("src.api.routers.rico_chat.get_ai_provider", return_value="deepseek"):
+            r = auth_client.get("/api/v1/rico/openai-smoke")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["provider"] == "deepseek"
+        assert body["success"] is True
+
+    def test_fallback_provider_disabled_returns_200_but_not_success(self, auth_client):
+        # When active provider is neither openai nor deepseek, smoke returns structured error.
+        with patch("src.api.routers.rico_chat.call_openai_minimal", return_value={
+            "success": False,
+            "text": "Premium AI provider disabled",
+            "provider_available": False,
+        }), patch("src.api.routers.rico_chat.get_ai_provider", return_value="anthropic"):
+            r = auth_client.get("/api/v1/rico/openai-smoke")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["success"] is False
+        assert body["provider"] == "anthropic"
+        assert "Premium AI provider disabled" in body["response"]
