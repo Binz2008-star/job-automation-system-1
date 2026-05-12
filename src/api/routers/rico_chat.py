@@ -260,23 +260,35 @@ async def rico_upload_cv(
     parsed = chat_service.parse_cv(data, filename=safe_name)
 
     # Persist extracted CV fields to profile for chat context
-    from src.repositories.profile_repo import upsert_profile
-    from src.repositories.onboarding_repo import mark_onboarding_complete
-    profile_updates = {
-        "email": parsed.get("emails", [None])[0] if parsed.get("emails") else None,
-        "phone": parsed.get("phones", [None])[0] if parsed.get("phones") else None,
-        "skills": parsed.get("skills", []),
-        "years_experience": parsed.get("years_experience_hint"),
-        "cv_filename": safe_name,
-        "cv_status": "parsed",
-        "profile_creation_mode": "cv_first",
-        "manual_profile_wizard_disabled": True,
-    }
-    # Only include non-None values
-    profile_updates = {k: v for k, v in profile_updates.items() if v is not None}
-    upsert_profile(user_id=resolved_user_id, updates=profile_updates)
-    # Mark onboarding complete so chat uses CV profile immediately
-    mark_onboarding_complete(resolved_user_id)
+    # Security: Only persist for authenticated users to prevent profile overwrite attacks
+    try:
+        authenticated_user_id = get_current_user_id(request)
+        from src.repositories.profile_repo import upsert_profile, get_profile
+        from src.repositories.onboarding_repo import mark_onboarding_complete
+
+        # Get existing profile to preserve data
+        existing_profile = get_profile(authenticated_user_id)
+        existing_skills = getattr(existing_profile, "skills", []) if existing_profile else []
+
+        profile_updates = {
+            "email": parsed.get("emails", [None])[0] if parsed.get("emails") else None,
+            "phone": parsed.get("phones", [None])[0] if parsed.get("phones") else None,
+            # Preserve existing skills if extraction returns empty list
+            "skills": parsed.get("skills", []) if parsed.get("skills") else existing_skills,
+            "years_experience": parsed.get("years_experience_hint"),
+            "cv_filename": safe_name,
+            "cv_status": "parsed",
+            "profile_creation_mode": "cv_first",
+            "manual_profile_wizard_disabled": True,
+        }
+        # Only include non-None values and non-empty lists
+        profile_updates = {k: v for k, v in profile_updates.items() if v not in (None, [], {})}
+        upsert_profile(user_id=authenticated_user_id, updates=profile_updates)
+        # Mark onboarding complete so chat uses CV profile immediately
+        mark_onboarding_complete(authenticated_user_id)
+    except HTTPException:
+        # Unauthenticated user: return parsed data without persisting
+        pass
 
     return {
         "user_id": resolved_user_id,
