@@ -204,91 +204,124 @@ class RicoDB:
                 )
             conn.commit()
 
-    def upsert_user(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def upsert_user(self, payload: Dict[str, Any], conn=None) -> Dict[str, Any]:
         external_user_id = payload.get("external_user_id") or payload.get("email") or payload.get("telegram_username") or str(uuid.uuid4())
-        with self.connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO rico_users (external_user_id, name, email, phone, telegram_username, telegram_chat_id, source)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (external_user_id) DO UPDATE SET
-                        name = COALESCE(EXCLUDED.name, rico_users.name),
-                        email = COALESCE(EXCLUDED.email, rico_users.email),
-                        phone = COALESCE(EXCLUDED.phone, rico_users.phone),
-                        telegram_username = COALESCE(EXCLUDED.telegram_username, rico_users.telegram_username),
-                        telegram_chat_id = COALESCE(EXCLUDED.telegram_chat_id, rico_users.telegram_chat_id),
-                        updated_at = now()
-                    RETURNING *
-                    """,
-                    (
-                        external_user_id,
-                        payload.get("name"),
-                        payload.get("email"),
-                        payload.get("phone"),
-                        payload.get("telegram_username"),
-                        payload.get("telegram_chat_id"),
-                        payload.get("source", "rico"),
-                    ),
-                )
-                row = dict(cur.fetchone())
+
+        # Use provided connection or create new one
+        should_close = conn is None
+        if conn is None:
+            conn = self.connect()
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO rico_users (external_user_id, name, email, phone, telegram_username, telegram_chat_id, source)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (external_user_id) DO UPDATE SET
+                    name = COALESCE(EXCLUDED.name, rico_users.name),
+                    email = COALESCE(EXCLUDED.email, rico_users.email),
+                    phone = COALESCE(EXCLUDED.phone, rico_users.phone),
+                    telegram_username = COALESCE(EXCLUDED.telegram_username, rico_users.telegram_username),
+                    telegram_chat_id = COALESCE(EXCLUDED.telegram_chat_id, rico_users.telegram_chat_id),
+                    updated_at = now()
+                RETURNING *
+                """,
+                (
+                    external_user_id,
+                    payload.get("name"),
+                    payload.get("email"),
+                    payload.get("phone"),
+                    payload.get("telegram_username"),
+                    payload.get("telegram_chat_id"),
+                    payload.get("source", "rico"),
+                ),
+            )
+            row = dict(cur.fetchone())
+
+        if should_close:
             conn.commit()
+            conn.close()
+
         return row
 
-    def upsert_profile(self, user_id: str, profile: Dict[str, Any], cv_file_url: Optional[str] = None, cv_text: Optional[str] = None, cv_structured: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        with self.connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO rico_profiles (user_id, profile, cv_file_url, cv_text, cv_structured)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (user_id) DO UPDATE SET
-                        profile = rico_profiles.profile || EXCLUDED.profile,
-                        cv_file_url = COALESCE(EXCLUDED.cv_file_url, rico_profiles.cv_file_url),
-                        cv_text = COALESCE(EXCLUDED.cv_text, rico_profiles.cv_text),
-                        cv_structured = rico_profiles.cv_structured || EXCLUDED.cv_structured,
-                        updated_at = now()
-                    RETURNING *
-                    """,
-                    (user_id, Json(profile), cv_file_url, cv_text, Json(cv_structured or {})),
-                )
-                row = dict(cur.fetchone())
+    def upsert_profile(self, user_id: str, profile: Dict[str, Any], cv_file_url: Optional[str] = None, cv_text: Optional[str] = None, cv_structured: Optional[Dict[str, Any]] = None, conn=None) -> Dict[str, Any]:
+        # Use provided connection or create new one
+        should_close = conn is None
+        if conn is None:
+            conn = self.connect()
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO rico_profiles (user_id, profile, cv_file_url, cv_text, cv_structured)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    profile = rico_profiles.profile || EXCLUDED.profile,
+                    cv_file_url = COALESCE(EXCLUDED.cv_file_url, rico_profiles.cv_file_url),
+                    cv_text = COALESCE(EXCLUDED.cv_text, rico_profiles.cv_text),
+                    cv_structured = rico_profiles.cv_structured || EXCLUDED.cv_structured,
+                    updated_at = now()
+                RETURNING *
+                """,
+                (user_id, Json(profile), cv_file_url, cv_text, Json(cv_structured or {})),
+            )
+            row = dict(cur.fetchone())
+
+        if should_close:
             conn.commit()
+            conn.close()
+
         return row
 
-    def upsert_settings(self, user_id: str, settings: Dict[str, Any]) -> Dict[str, Any]:
-        with self.connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO rico_agent_settings (user_id, settings)
-                    VALUES (%s, %s)
-                    ON CONFLICT (user_id) DO UPDATE SET
-                        settings = rico_agent_settings.settings || EXCLUDED.settings,
-                        updated_at = now()
-                    RETURNING *
-                    """,
-                    (user_id, Json(settings)),
-                )
-                row = dict(cur.fetchone())
+    def upsert_settings(self, user_id: str, settings: Dict[str, Any], conn=None) -> Dict[str, Any]:
+        # Use provided connection or create new one
+        should_close = conn is None
+        if conn is None:
+            conn = self.connect()
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO rico_agent_settings (user_id, settings)
+                VALUES (%s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    settings = rico_agent_settings.settings || EXCLUDED.settings,
+                    updated_at = now()
+                RETURNING *
+                """,
+                (user_id, Json(settings)),
+            )
+            row = dict(cur.fetchone())
+
+        if should_close:
             conn.commit()
+            conn.close()
+
         return row
 
-    def get_user_bundle(self, user_id: str) -> Optional[Dict[str, Any]]:
-        with self.connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT u.*, p.profile, p.cv_file_url, p.cv_text, p.cv_structured, s.settings
-                    FROM rico_users u
-                    LEFT JOIN rico_profiles p ON p.user_id = u.id
-                    LEFT JOIN rico_agent_settings s ON s.user_id = u.id
-                    WHERE u.id::text = %s OR u.external_user_id = %s OR u.email = %s OR u.telegram_username = %s
-                    LIMIT 1
-                    """,
-                    (user_id, user_id, user_id, user_id),
-                )
-                row = cur.fetchone()
+    def get_user_bundle(self, user_id: str, conn=None) -> Optional[Dict[str, Any]]:
+        # Use provided connection or create new one
+        should_close = conn is None
+        if conn is None:
+            conn = self.connect()
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT u.*, p.profile, p.cv_file_url, p.cv_text, p.cv_structured, s.settings
+                FROM rico_users u
+                LEFT JOIN rico_profiles p ON p.user_id = u.id
+                LEFT JOIN rico_agent_settings s ON s.user_id = u.id
+                WHERE u.id::text = %s OR u.external_user_id = %s OR u.email = %s OR u.telegram_username = %s
+                LIMIT 1
+                """,
+                (user_id, user_id, user_id, user_id),
+            )
+            row = cur.fetchone()
+
+        if should_close:
+            conn.close()
+
         return dict(row) if row else None
 
     def append_chat(self, user_id: str, role: str, message: str, metadata: Optional[Dict[str, Any]] = None) -> None:
