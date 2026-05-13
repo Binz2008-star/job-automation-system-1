@@ -128,9 +128,10 @@ export interface MeResponse {
   authenticated: boolean;
 }
 
-export async function fetchMe(): Promise<MeResponse> {
+export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {
   const res = await fetch(`${PROXY}/api/v1/me`, {
     credentials: "include",
+    signal,
   });
   if (!res.ok) throw new Error(`/me failed: ${res.status}`);
   return res.json() as Promise<MeResponse>;

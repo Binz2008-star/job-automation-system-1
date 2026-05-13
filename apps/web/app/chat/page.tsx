@@ -233,18 +233,32 @@ export default function ChatPage() {
     }
 
     let cancelled = false;
-    fetchMe()
+    const controller = new AbortController();
+    // Safety fallback: if fetchMe hangs (e.g. proxy/backend unreachable),
+    // force guest mode after 5 s so the UI never stays in "checking" forever.
+    const fallbackId = setTimeout(() => {
+      if (!cancelled) {
+        controller.abort();
+        setChatAudience("public");
+      }
+    }, 5000);
+
+    fetchMe(controller.signal)
       .then((me) => {
         if (cancelled) return;
+        clearTimeout(fallbackId);
         setChatAudience(me.authenticated ? "authenticated" : "public");
       })
       .catch(() => {
         if (cancelled) return;
+        clearTimeout(fallbackId);
         setChatAudience("public");
       });
 
     return () => {
       cancelled = true;
+      clearTimeout(fallbackId);
+      controller.abort();
     };
   }, []);
 
