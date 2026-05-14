@@ -61,6 +61,17 @@ def _cv_profile(**kwargs) -> dict:
     return base
 
 
+def _empty_profile() -> dict:
+    """Empty profile with no CV data."""
+    return {
+        "cv_status": None,
+        "skills": [],
+        "certifications": [],
+        "years_experience": None,
+        "industries": [],
+        "target_roles": [],
+    }
+
 def _run_with_profile(api, message: str, profile: dict, route_entities=None) -> dict:
     """Call _handle_active_user with get_profile mocked to return profile."""
     from unittest.mock import MagicMock
@@ -422,3 +433,51 @@ class TestReasonsQuality:
         )
         assert len(reasons) >= 1
         assert "aligns" in reasons[0].lower() or "profile" in reasons[0].lower()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# I. CV profile + follow-up "so?" / "what now?" → instant options, no pipeline
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestI_NextStepFollowup:
+    def test_so_returns_options(self):
+        api = _make_api()
+        result = _run_with_profile(api, "so?", _cv_profile())
+        assert result["type"] == "options"
+
+    def test_what_now_returns_options(self):
+        api = _make_api()
+        result = _run_with_profile(api, "what now?", _cv_profile())
+        assert result["type"] == "options"
+
+    def test_next_returns_options(self):
+        api = _make_api()
+        result = _run_with_profile(api, "next?", _cv_profile())
+        assert result["type"] == "options"
+
+    def test_run_for_profile_not_called(self):
+        api = _make_api()
+        _run_with_profile(api, "so?", _cv_profile())
+        api.system.run_for_profile.assert_not_called()
+
+    def test_options_include_message_field(self):
+        api = _make_api()
+        result = _run_with_profile(api, "so?", _cv_profile())
+        opts = result.get("options", [])
+        assert any("message" in opt for opt in opts)
+
+    def test_no_cv_does_not_crash(self):
+        api = _make_api()
+        result = _run_with_profile(api, "so?", _empty_profile())
+        assert result.get("type") != "options"
+
+    def test_ok_returns_options(self):
+        api = _make_api()
+        result = _run_with_profile(api, "ok", _cv_profile())
+        assert result["type"] == "options"
+
+    def test_continue_returns_options(self):
+        api = _make_api()
+        result = _run_with_profile(api, "continue", _cv_profile())
+        assert result["type"] == "options"
+

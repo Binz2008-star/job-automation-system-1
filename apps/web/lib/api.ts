@@ -120,6 +120,19 @@ export async function getHealth(): Promise<ClientHealthResponse> {
   return requestJson<ClientHealthResponse>("/health", { method: "GET" });
 }
 
+// ── Version (debug only, non-user-facing) ──────────────────────────────────────
+
+export interface VersionResponse {
+  app: string;
+  commit: string;
+  environment: string;
+  deployed_at: string;
+}
+
+export async function getVersion(): Promise<VersionResponse> {
+  return requestJson<VersionResponse>("/api/v1/version", { method: "GET" });
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 export interface MeResponse {
@@ -622,6 +635,15 @@ export interface JobMatch {
 export interface RicoOption {
   action: string;
   label: string;
+  message?: string;
+  role?: string;
+}
+
+export interface NextAction {
+  action: string;
+  label: string;
+  message: string;
+  role: string;
 }
 
 export interface NextAction {

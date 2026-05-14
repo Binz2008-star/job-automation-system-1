@@ -204,7 +204,7 @@ function OptionButtons({ options, onAction }: { options: RicoOption[]; onAction:
       {options.map((opt) => (
         <button
           key={opt.action}
-          onClick={() => onAction(opt.label)}
+          onClick={() => onAction(opt.message ?? opt.label)}
           className="text-[12px] px-3 py-2 rounded-xl border border-[#5b4fff]/30 text-[#a78bfa] hover:bg-[#5b4fff]/10 hover:border-[#5b4fff]/60 transition-colors rico-focus-strong"
         >
           {opt.label}

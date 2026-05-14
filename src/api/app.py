@@ -161,6 +161,36 @@ async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
         content={"detail": "Internal server error"},
     )
 
+# ── Version ───────────────────────────────────────────────────────────────────
+
+import datetime as _dt
+
+
+def _resolve_commit() -> str:
+    """Read commit from env vars set by Render/Vercel/CI."""
+    for key in (
+        "GIT_COMMIT",
+        "RENDER_GIT_COMMIT",
+        "VERCEL_GIT_COMMIT_SHA",
+        "COMMIT_SHA",
+        "CF_PAGES_COMMIT_SHA",
+    ):
+        val = os.getenv(key, "").strip()
+        if val:
+            return val
+    return "unknown"
+
+
+@app.get("/api/v1/version")
+def version() -> Dict[str, str]:
+    return {
+        "app": "rico",
+        "commit": _resolve_commit(),
+        "environment": os.getenv("ENVIRONMENT", os.getenv("RACK_ENV", "development")),
+        "deployed_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+    }
+
+
 # ── Health + root ─────────────────────────────────────────────────────────────
 
 @app.api_route("/", methods=["GET", "HEAD"])

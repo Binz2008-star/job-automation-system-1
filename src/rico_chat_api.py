@@ -217,6 +217,61 @@ class RicoChatAPI:
         """True for generic job-search phrases without a specific role."""
         return bool(RicoChatAPI._GENERIC_JOB_REQUEST_RE.search(message))
 
+    @staticmethod
+    def _looks_like_next_step_followup(message: str) -> bool:
+        """True for short post-confirmation follow-ups like 'so?' or 'what now?'."""
+        text = (message or "").strip().lower()
+        return text in RicoChatAPI._FOLLOWUP_NEXT_STEP_PHRASES
+
+    def _handle_next_step_options(self, user_id: str, profile: Any) -> dict[str, Any]:
+        """Return instant options after role confirmation — no AI, no pipeline."""
+        target_roles = self._as_list(self._profile_value(profile, "target_roles"))
+        suggestions = self._generate_role_suggestions(
+            self._as_list(self._profile_value(profile, "skills")),
+            self._as_list(self._profile_value(profile, "certifications")),
+            self._profile_value(profile, "years_experience"),
+            self._as_list(self._profile_value(profile, "industries")),
+        )
+        # Prefer fresh CV-derived suggestions over potentially stale target_roles
+        role = (
+            suggestions[0]["label"] if suggestions
+            else target_roles[0] if target_roles
+            else "your target role"
+        )
+
+        response: dict[str, Any] = {
+            "type": "options",
+            "message": "Next, choose what you want me to do.",
+            "options": [
+                {
+                    "action": "find_live_jobs",
+                    "label": "Find live UAE jobs",
+                    "message": f"find live jobs for {role}",
+                    "role": role,
+                },
+                {
+                    "action": "save_target_role",
+                    "label": "Save as target role",
+                    "message": f"save {role} as target role",
+                    "role": role,
+                },
+                {
+                    "action": "prepare_application_angle",
+                    "label": "Prepare application angle",
+                    "message": f"prepare application angle for {role}",
+                    "role": role,
+                },
+                {
+                    "action": "show_profile_roles",
+                    "label": "Show roles from my CV",
+                    "message": "show roles from my CV",
+                },
+            ],
+            "next_action": "choose_next_step",
+        }
+        self._append_chat(user_id, "assistant", response["message"])
+        return response
+
     def _looks_like_selected_role(self, message: str, profile: Any) -> bool:
         """True when the message looks like a user selecting a suggested role.
 
@@ -549,6 +604,12 @@ class RicoChatAPI:
         "prepare", "draft", "update", "track",
     })
 
+    _FOLLOWUP_NEXT_STEP_PHRASES = frozenset({
+        "so", "so?", "what now", "what now?", "what's next", "whats next",
+        "next", "next?", "then", "then?", "now", "now?", "ok", "okay",
+        "continue", "go on",
+    })
+
     _JOB_SEARCH_OPTIONS = {
         "type": "options",
         "message": "Here is what I can help you with:",
@@ -748,6 +809,20 @@ class RicoChatAPI:
         """
         profile = get_profile(user_id)
         has_cv = self._has_cv_profile(profile)
+
+        logger.info(
+            "rico_followup_check user=%s has_cv=%s msg=%r followup=%s",
+            user_id, has_cv, message, self._looks_like_next_step_followup(message),
+        )
+
+        # Fast path: short follow-up after role confirmation → instant options
+        if has_cv and self._looks_like_next_step_followup(message):
+            logger.info("rico_followup_hit user=%s msg=%r", user_id, message)
+            return self._finalize(
+                self._handle_next_step_options(user_id, profile),
+                self.SOURCE_KEYWORD,
+                profile=profile,
+            )
 
         # Fast path: user selected a suggested role → deterministic confirmation
         if has_cv and not self._is_live_job_search_request(message):
