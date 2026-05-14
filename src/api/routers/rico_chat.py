@@ -670,6 +670,13 @@ def rico_ai_provider_health(request: Request) -> dict[str, Any]:
     provider = get_ai_provider()
     agent = RicoOpenAIAgent()
 
+    # Get Jotform form IDs (without exposing secrets)
+    jotform_form_id = os.getenv("JOTFORM_FORM_ID") or os.getenv("JOTFORM_RICO_FORM_ID")
+    jotform_configured = bool(jotform_form_id)
+
+    # Check webhook secret status (without exposing the secret)
+    webhook_secret_configured = bool(os.getenv("JOTFORM_WEBHOOK_SECRET"))
+
     return {
         "active_provider": provider,
         "provider_available": agent.provider_available,
@@ -677,6 +684,8 @@ def rico_ai_provider_health(request: Request) -> dict[str, Any]:
         "deepseek_available": agent.deepseek_available,
         "hf_available": agent.hf_available,
         "provider_state": "available" if agent.provider_available else "unavailable",
+        "jotform_form_configured": jotform_configured,
+        "jotform_webhook_secret_configured": webhook_secret_configured,
         "timestamp": datetime.now(_UTC).isoformat(),
     }
 

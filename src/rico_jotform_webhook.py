@@ -37,11 +37,20 @@ def _validate_webhook_secret() -> bool:
 
 
 def _active_form_ids() -> frozenset:
-    """Return accepted Jotform form IDs from JOTFORM_FORM_ID env var."""
+    """Return accepted Jotform form IDs from JOTFORM_FORM_ID and JOTFORM_RICO_FORM_ID env vars."""
+    form_ids = []
+
+    # Check JOTFORM_FORM_ID (can be comma-separated)
     raw = os.getenv("JOTFORM_FORM_ID", "").strip()
-    if not raw:
-        return frozenset()
-    return frozenset(part.strip() for part in raw.split(",") if part.strip())
+    if raw:
+        form_ids.extend(part.strip() for part in raw.split(",") if part.strip())
+
+    # Check JOTFORM_RICO_FORM_ID alias (single form ID)
+    alias = os.getenv("JOTFORM_RICO_FORM_ID", "").strip()
+    if alias:
+        form_ids.append(alias)
+
+    return frozenset(form_ids)
 
 
 def _resolve_user_id(answers: Dict[str, Any]) -> Optional[str]:
