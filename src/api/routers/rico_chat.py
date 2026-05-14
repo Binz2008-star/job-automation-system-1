@@ -66,6 +66,14 @@ _SAFE_SESSION_RE = re.compile(r"^[a-zA-Z0-9\-_]+$")
 router = APIRouter(prefix="/api/v1/rico", tags=["rico"])
 
 
+def _is_production() -> bool:
+    """Check if running in production environment."""
+    return (os.getenv("APP_ENV") or os.getenv("ENV") or "").strip().lower() in {
+        "prod",
+        "production",
+    }
+
+
 # ============================================================================
 # Pydantic Models
 # ============================================================================
@@ -224,9 +232,14 @@ def _resolve_upload_user_id(
 
 
 def _validate_jotform_secret(request: Request) -> None:
-    """Reject requests when JOTFORM_WEBHOOK_SECRET is configured but not matched."""
+    """Validate Jotform webhook secret; fail closed in production."""
     webhook_secret = os.getenv("JOTFORM_WEBHOOK_SECRET", "").strip()
+
     if not webhook_secret:
+        if _is_production():
+            logger.error("jotform_webhook: JOTFORM_WEBHOOK_SECRET missing in production")
+            raise HTTPException(status_code=503, detail="Webhook not configured")
+        logger.warning("jotform_webhook: JOTFORM_WEBHOOK_SECRET missing; allowing dev request")
         return
 
     provided = (
@@ -234,6 +247,7 @@ def _validate_jotform_secret(request: Request) -> None:
         or request.headers.get("X-Webhook-Secret")
         or request.query_params.get("secret", "")
     )
+
     if not provided or not secrets.compare_digest(provided, webhook_secret):
         logger.warning("jotform_webhook: missing or invalid secret")
         raise HTTPException(status_code=403, detail="Invalid or missing webhook secret")
@@ -649,6 +663,7 @@ def rico_openai_smoke(request: Request) -> dict[str, Any]:
 @router.get("/health/ai-provider")
 def rico_ai_provider_health(request: Request) -> dict[str, Any]:
     """Health check endpoint exposing current AI provider availability and state."""
+    get_current_user(request)
     from src.rico_openai_agent import RicoOpenAIAgent
     from src.rico_env import get_ai_provider
 
@@ -785,7 +800,12 @@ async def rico_github_webhook(request: Request) -> dict[str, Any]:
     sig = request.headers.get("X-Hub-Signature-256", "")
     secret = os.getenv("GITHUB_WEBHOOK_SECRET", "").strip()
 
-    if secret:
+    if not secret:
+        if _is_production():
+            logger.error("github_webhook: GITHUB_WEBHOOK_SECRET missing in production")
+            raise HTTPException(status_code=503, detail="Webhook not configured")
+        logger.warning("github_webhook: GITHUB_WEBHOOK_SECRET missing; allowing dev request")
+    else:
         expected = "sha256=" + hmac.new(
             secret.encode(), raw_body, hashlib.sha256
         ).hexdigest()
