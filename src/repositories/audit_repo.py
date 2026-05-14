@@ -159,6 +159,82 @@ def _mem_seed(log: ActionLog) -> None:
         _DEDUP_CACHE[action_id] = (time.monotonic(), log.get("result_status", ""))
 
 
+# ── General audit log write (for profile questions, etc.) ───────────────────
+
+def write_audit_log(
+    user_id: str,
+    event_type: str,
+    data: Dict[str, Any],
+    timestamp: Optional[datetime] = None,
+) -> None:
+    """
+    Write a general audit log entry (e.g., profile questions).
+
+    This is a compatibility wrapper for logging events that don't fit
+    the action_log schema (like profile_question events).
+    """
+    if timestamp is None:
+        timestamp = datetime.now(_UTC)
+
+    if is_db_available():
+        conn = get_db_connection()
+        if not conn:
+            return
+        try:
+            with conn.cursor() as cur:
+                # Check if table has event_type and data columns
+                cur.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'action_audit_log'
+                    AND column_name IN ('event_type', 'data')
+                    """
+                )
+                existing_columns = [row[0] for row in cur.fetchall()]
+
+                # If table doesn't have these columns, add them
+                if 'event_type' not in existing_columns:
+                    cur.execute("ALTER TABLE action_audit_log ADD COLUMN event_type TEXT")
+                if 'data' not in existing_columns:
+                    cur.execute("ALTER TABLE action_audit_log ADD COLUMN data JSONB")
+
+                # Insert the audit log entry
+                import json
+                cur.execute(
+                    """
+                    INSERT INTO action_audit_log (
+                        action_id, action_type, user_email,
+                        timestamp, event_type, data, result_status, duration_ms
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        "",  # action_id (empty for non-action events)
+                        "audit",  # action_type
+                        user_id,  # user_email
+                        timestamp.isoformat(),
+                        event_type,
+                        json.dumps(data),
+                        "success",
+                        0,
+                    ),
+                )
+                conn.commit()
+                logger.info(
+                    "audit_log_written user=%s event_type=%s",
+                    user_id, event_type,
+                )
+        except Exception:
+            logger.exception("audit_log_write_failed user=%s event_type=%s", user_id, event_type)
+        finally:
+            conn.close()
+    else:
+        logger.info(
+            "audit_log user=%s event_type=%s data=%s",
+            user_id, event_type, data,
+        )
+
+
 # ── Recent log query (for inspection / tests) ─────────────────────────────────
 
 def get_recent(limit: int = 20) -> list:
