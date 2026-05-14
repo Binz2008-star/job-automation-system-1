@@ -1,0 +1,923 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Job Search Command Center</title>
+<style>
+:root {
+  --bg:#0f172a; --panel:#111827; --card:#1f2937; --muted:#9ca3af;
+  --text:#f9fafb; --line:#374151; --accent:#38bdf8; --good:#22c55e;
+  --mid:#f59e0b; --low:#64748b; --danger:#ef4444;
+}
+* { box-sizing:border-box; }
+body { margin:0; font-family:Inter, Arial, sans-serif; background:linear-gradient(135deg,#020617,#111827); color:var(--text); }
+.container { max-width:1400px; margin:0 auto; padding:32px; }
+.header { display:flex; justify-content:space-between; gap:20px; align-items:flex-start; margin-bottom:28px; }
+h1 { margin:0; font-size:34px; letter-spacing:-0.04em; }
+.subtitle { color:var(--muted); margin-top:8px; line-height:1.5; }
+.badge { border:1px solid var(--line); padding:10px 14px; border-radius:999px; color:#d1d5db; background:rgba(255,255,255,0.04); white-space:nowrap; }
+.source-badge { background:rgba(34,197,94,.16); color:#86efac; border-color:#22c55e; }
+.grid { display:grid; gap:16px; }
+.stats { grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); margin-bottom:16px; }
+.three { grid-template-columns:repeat(3,1fr); }
+.two { grid-template-columns:1fr 1fr; margin-bottom:16px; }
+.card { background:rgba(31,41,55,0.78); border:1px solid var(--line); border-radius:20px; padding:20px; box-shadow:0 20px 45px rgba(0,0,0,.22); }
+.card:hover { transform:translateY(-2px); box-shadow:0 25px 50px rgba(0,0,0,.3); transition:all 0.3s ease; }
+.stat-label { color:var(--muted); font-size:13px; text-transform:uppercase; letter-spacing:.08em; }
+.stat-value { font-size:32px; font-weight:800; margin-top:8px; }
+.stat-sub { color:var(--muted); font-size:13px; margin-top:6px; min-height:18px; }
+h2 { margin:0 0 16px; font-size:18px; }
+.bar-row { margin:14px 0; }
+.bar-head { display:flex; justify-content:space-between; gap:16px; font-size:14px; margin-bottom:7px; }
+.bar-bg { height:9px; background:#0b1220; border-radius:999px; overflow:hidden; }
+.bar-fill { height:100%; background:linear-gradient(90deg,var(--accent),var(--good)); border-radius:999px; transition:width 0.3s ease; }
+.pipeline { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+.step { border:1px solid var(--line); border-radius:16px; padding:14px; background:#111827; transition:all 0.3s ease; }
+.step:hover { background:#1f2937; transform:translateY(-1px); }
+.step strong { display:block; margin-bottom:6px; }
+.step span { color:var(--muted); font-size:13px; }
+table { width:100%; border-collapse:collapse; }
+th, td { padding:13px 10px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
+th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+a { color:#e0f2fe; text-decoration:none; transition:color 0.2s ease; }
+a:hover { color:#38bdf8; }
+.muted { color:var(--muted); font-size:13px; margin-top:4px; }
+.score { font-weight:800; font-size:18px; }
+.explanation { font-size:12px; color:var(--muted); max-width:300px; }
+.pill { display:inline-block; padding:5px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+.very-high { background:rgba(16,185,129,.16); color:#10b981; }
+.high { background:rgba(34,197,94,.16); color:#86efac; }
+.high-quality { background:rgba(34,197,94,.16); color:#86efac; }
+.medium { background:rgba(245,158,11,.16); color:#fcd34d; }
+.low { background:rgba(100,116,139,.20); color:#cbd5e1; }
+.footer { color:var(--muted); font-size:13px; margin-top:18px; }
+.refresh-btn { background:var(--accent); color:white; border:none; padding:8px 16px; border-radius:8px; cursor:pointer; font-weight:600; }
+.refresh-btn:hover { background:#0ea5e9; }
+@media (max-width:900px) { .stats,.two,.three,.pipeline { grid-template-columns:1fr; } .header { flex-direction:column; } .container { padding:20px; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div>
+      <h1>Job Search Command Center</h1>
+      <div class="subtitle">Live dashboard for pipeline output, match quality, applications, and best opportunities.</div>
+    </div>
+    <div>
+      <div class="badge source-badge">🗄️ Database</div>
+      <div class="badge">Generated 2026-05-11 17:29</div>
+    </div>
+  </div>
+
+  <div class="grid stats">
+    
+        <div class="card stat-card">
+            <div class="stat-label">Relevant Roles</div>
+            <div class="stat-value" style="color: #10b981;">96.0%</div>
+            <div class="stat-sub">48/50 jobs match target domains</div>
+        </div>
+        
+    
+        <div class="card stat-card">
+            <div class="stat-label">Interview Rate</div>
+            <div class="stat-value" style="">0.0%</div>
+            <div class="stat-sub">0/0 applications</div>
+        </div>
+        
+    
+        <div class="card stat-card">
+            <div class="stat-label">Pipeline Applications</div>
+            <div class="stat-value" style="">0</div>
+            <div class="stat-sub">0 imported from history</div>
+        </div>
+        
+    
+        <div class="card stat-card">
+            <div class="stat-label">False Positive Rate</div>
+            <div class="stat-value" style="">4.0%</div>
+            <div class="stat-sub">Non-relevant jobs detected</div>
+        </div>
+        
+    
+        <div class="card stat-card">
+            <div class="stat-label">NG Session</div>
+            <div class="stat-value" style="">UNKNOWN</div>
+            <div class="stat-sub">Success: 0 · Failures: 0</div>
+        </div>
+        
+    
+        <div class="card stat-card">
+            <div class="stat-label">Avg Apply Time</div>
+            <div class="stat-value" style="">0s</div>
+            <div class="stat-sub">No successful applies yet</div>
+        </div>
+        
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h2>Platform Flow</h2>
+    <div class="pipeline">
+      <div class="step"><strong>1. Fetch</strong><span>Indeed, LinkedIn, Google</span></div>
+      <div class="step"><strong>2. Filter</strong><span>Deduplication + seen jobs</span></div>
+      <div class="step"><strong>3. Score</strong><span>CV-aware match score</span></div>
+      <div class="step"><strong>4. Notify</strong><span>Email + Telegram</span></div>
+      <div class="step"><strong>5. Apply</strong><span>Track applications</span></div>
+      <div class="step"><strong>6. Learn</strong><span>Feedback loop intelligence</span></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h2>🎯 Recruiter Funnel</h2>
+    <div class="pipeline">
+      <div class="step"><strong>Applications Sent</strong><span>0 total</span></div>
+      <div class="step"><strong>Viewed</strong><span>Tracking via Gmail sync</span></div>
+      <div class="step"><strong>Replied</strong><span>Response intelligence active</span></div>
+      <div class="step"><strong>Interview</strong><span>0 scheduled</span></div>
+      <div class="step"><strong>Conversion Rate</strong><span>0.0%</span></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h2>🚫 Top Excluded Jobs</h2>
+    <div style="font-size: 14px;">
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div>
+          <h4 style="margin: 0 0 8px 0; color: var(--muted); font-size: 12px;">Most Common Exclusions</h4>
+          <div style='padding: 4px 0; border-bottom: 1px solid var(--line);'><strong>VP, Credit Management</strong> <span class='muted'>(1 times)</span></div><div style='padding: 4px 0; border-bottom: 1px solid var(--line);'><strong>Civil Foreman</strong> <span class='muted'>(1 times)</span></div>
+        </div>
+        <div>
+          <h4 style="margin: 0 0 8px 0; color: var(--muted); font-size: 12px;">Filter Tuning Insights</h4>
+          <div style="padding: 8px; background: rgba(245, 158, 11, 0.1); border: 1px solid var(--mid); border-radius: 8px;">
+            <div style="font-size: 12px; margin-bottom: 4px;">False Positive Rate: <strong>4.0%</strong></div>
+            <div style="font-size: 12px;">Relevant Match Rate: <strong>96.0%</strong></div>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h2>🧠 Response Intelligence</h2>
+    
+    <div class="grid two" style="margin-bottom:16px;">
+      <div>
+        <div class="bar-row">
+          <div class="bar-head"><span>Last Feedback Cycle</span><strong style="color: var(--danger);">Failed</strong></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-head"><span>Total Cycles</span><strong>0</strong></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-head"><span>Samples Processed</span><strong>0</strong></div>
+        </div>
+      </div>
+      <div>
+        <div class="bar-row">
+          <div class="bar-head"><span>Adjustments Version</span><strong>0</strong></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-head"><span>Success Rate</span><strong>0.0%</strong></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-head"><span>Last Run</span><strong>2026-05-11</strong></div>
+        </div>
+      </div>
+    </div>
+    <div class="muted" style="color:var(--danger);">⚠️ Last error: Learning failed: Need at least 5 matched outcomes; got 0</div><div class="muted">Feedback loop ready - needs 5+ matched outcomes to start learning</div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h2>📄 Document Viewer</h2>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+      <div>
+        <h3 style="margin: 0 0 12px 0; font-size: 16px; color: var(--muted);">CV/Resume</h3>
+        
+        <div style="color: var(--muted); padding: 12px; background: var(--panel); border-radius: 8px;">
+          No CV document found. Place your CV at data/cv.pdf to enable PDF viewing.
+        </div>
+        
+      </div>
+      <div>
+        <h3 style="margin: 0 0 12px 0; font-size: 16px; color: var(--muted);">Quick Access</h3>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          
+          <div style="color: var(--muted); font-size: 13px;">
+            Upload your CV to enable document viewing features
+          </div>
+          
+        </div>
+      </div>
+    </div>
+    
+  </div>
+
+  <div class="grid two">
+    <div class="card">
+      <h2>Top Companies</h2>
+      
+        <div class="bar-row">
+            <div class="bar-head"><span>Careers International</span><strong>3</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:100%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>Dutco Group</span><strong>2</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:66%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>Al Mansoor Enterprises</span><strong>2</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:66%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>UNITED AL SAQER GROUP</span><strong>2</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:66%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>Parsons</span><strong>2</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:66%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>Emirates Electrical &amp; Instrumentation Company</span><strong>2</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:66%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>Sisco</span><strong>1</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:33%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>Smart Research System</span><strong>1</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:33%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>SAKA Group of Companies</span><strong>1</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:33%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>Al Lul Transport and General contrating LLC</span><strong>1</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:33%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+    </div>
+    <div class="card">
+      <h2>Top Locations</h2>
+      
+        <div class="bar-row">
+            <div class="bar-head"><span>UAE</span><strong>35</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:100%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>Abu Dhabi, AZ, AE</span><strong>8</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:22%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>Dubai, DU, AE</span><strong>6</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:17%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>AE</span><strong>1</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:2%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+    </div>
+  </div>
+
+  <div class="grid three">
+    <div class="card">
+      <h2>Score Quality</h2>
+      
+        <div class="bar-row">
+            <div class="bar-head"><span>Very High</span><strong>25</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:100%; background:linear-gradient(90deg,#10b981,#22c55e)"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>High</span><strong>1</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:4%; background:linear-gradient(90deg,#10b981,#22c55e)"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>High quality</span><strong>3</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:12%; background:linear-gradient(90deg,#10b981,#22c55e)"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>Medium</span><strong>21</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:84%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-head"><span>Low</span><strong>0</strong></div>
+            <div class="bar-bg"><div class="bar-fill" style="width:0%; background:linear-gradient(90deg,var(--accent),var(--good))"></div></div>
+        </div>
+        
+    </div>
+    <div class="card">
+      <h2>Application Status</h2>
+      <div class="muted">No applications tracked yet.</div>
+    </div>
+    <div class="card">
+      <h2>Quick Stats</h2>
+      <div class="bar-row">
+        <div class="bar-head"><span>Jobs/Day (7d avg)</span><strong>7.1</strong></div>
+        <div class="bar-bg"><div class="bar-fill" style="width:71.42857142857143%"></div></div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-head"><span>Apply Rate (pipeline)</span><strong>0.0%</strong></div>
+        <div class="bar-bg"><div class="bar-fill" style="width:0.0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <h2>Top Jobs by Score (🗄️ Database)</h2>
+    <table>
+      <thead><tr><th>Role</th><th>Location</th><th>Quality</th><th>Score</th><th>Why it matches</th><th>Action</th></tr></thead>
+      <tbody>
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/hse-manager-74084715/" target="_blank">HSE Manager</a><div class="muted">Sisco</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">215 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>Direct match for target role: HSE Manager | Strong HSE management alignment | UAE market experience ...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://ae.indeed.com/viewjob?jk=4989b312297d51f8" target="_blank">Senior HSE Engineer- Roads &amp; Bridges</a><div class="muted">Smart Research System</div></td>
+        <td>Abu Dhabi, AZ, AE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">194 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>UAE market experience required...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://ae.indeed.com/viewjob?jk=bfb7cf0769796470" target="_blank">HSE Engineer</a><div class="muted">SAKA Group of Companies</div></td>
+        <td>Abu Dhabi, AZ, AE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">163 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>UAE market experience required...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://ae.indeed.com/viewjob?jk=b47642a9c25874ef" target="_blank">Safety Supervisor – Construction</a><div class="muted">Al Lul Transport and General contrating LLC</div></td>
+        <td>Abu Dhabi, AZ, AE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">152 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>UAE market experience required...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/safety-manager-5453886/" target="_blank">Safety Manager</a><div class="muted">CITIC Middle East Contracting L.L.C</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">145 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>Direct match for target role: Safety Manager | Safety management expertise match | UAE market experi...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/talent-pool-hse-manager-buildings-villas-mixed-use-development-theme-parks-middle-east-projects-74546018/" target="_blank">Talent Pool - HSE Manager (Buildings - Villas/Mixed-Use Development/Theme Parks) - Middle East Projects</a><div class="muted">Hill International</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">131 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>Direct match for target role: HSE Manager | Strong HSE management alignment...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/safety-officer-5368114/" target="_blank">Safety Officer</a><div class="muted">CHEM INNOVATION INDUSTRIES L.L.C-S.P.C</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">128 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>UAE market experience required...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/hse-officer-ehs-officer-5454253/" target="_blank">HSE Officer(EHS Officer)</a><div class="muted">Bilfinger</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">121 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>Direct match for target role: HSE Officer...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/hse-inspector-74168232/" target="_blank">HSE Inspector</a><div class="muted">MWH Global</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">116 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>Relevant HSE/Compliance experience...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/hse-manager-operations-73938870/" target="_blank">HSE Manager - Operations</a><div class="muted">Dutco Group</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">114 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>Direct match for target role: HSE Manager | Strong HSE management alignment | UAE market experience ...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/hse-officer-adnoc-approved-5453933/" target="_blank">HSE OFFICER ADNOC APPROVED</a><div class="muted">Al Mansoor Enterprises</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">113 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>Direct match for target role: HSE Officer...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://ae.indeed.com/viewjob?jk=d50428c55b44f7a7" target="_blank">HSE Engineer</a><div class="muted">Surbana Jurong Private Limited</div></td>
+        <td>Dubai, DU, AE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">108 ⭐⭐⭐⭐⭐</td>
+        
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/environmental-engineer-74029170/" target="_blank">Environmental Engineer</a><div class="muted">UNITED AL SAQER GROUP</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">107 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>Environmental management experience | UAE market experience required...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://ae.indeed.com/viewjob?jk=40d33e5f5a43db74" target="_blank">HSE Officer</a><div class="muted">Al barakah</div></td>
+        <td>Abu Dhabi, AZ, AE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">107 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>UAE market experience required...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/qhse-manager-quality-health-safety-and-environment-ready-mix-concrete-abu-dhabi-74375622/" target="_blank">QHSE Manager (Quality, Health, Safety, and Environment) – Ready Mix Concrete – Abu Dhabi</a><div class="muted">B7 Consultancy</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">103 ⭐⭐⭐⭐⭐</td>
+        <td class='explanation'>Direct match for target role: HSE Manager | Strong HSE management alignment | Quality HSE specializa...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    </tbody>
+    </table>
+  </div>
+
+  
+        <div class="card">
+          <h2>Recent Jobs</h2>
+          <table>
+            <thead><tr><th>Role</th><th>Location</th><th>Quality</th><th>Score</th><th>Why it matches</th><th>Action</th></tr></thead>
+            <tbody>
+    <tr>
+        <td><a href="https://ae.indeed.com/viewjob?jk=e4eeaef18268b768" target="_blank">HSE Trainer (Health, Safety &amp; Environment Trainer)</a><div class="muted">LIFE LINE SAFETY CONSULTANCY</div></td>
+        <td>Dubai, DU, AE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">100 </td>
+        <td class='explanation'>UAE market experience required...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://ae.indeed.com/viewjob?jk=e4d2e2ab4cbe59f1" target="_blank">HSE Manager</a><div class="muted">ELROI QHSE CONSULTANCY</div></td>
+        <td>Dubai, DU, AE</td>
+        <td><span class="pill high-quality">High quality</span></td>
+        <td class="score">74 </td>
+        <td class='explanation'>Direct match for target role: HSE Manager | Strong HSE management alignment...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://ae.indeed.com/viewjob?jk=38f5c2e6842a23e3" target="_blank">Health &amp; Safety Specialist</a><div class="muted">DSV</div></td>
+        <td>Dubai, DU, AE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">100 </td>
+        <td class='explanation'>UAE market experience required...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://ae.indeed.com/viewjob?jk=dff8df8a5c4e1477" target="_blank">Safety and Security Manager – (Highrise Construction experience)</a><div class="muted">LA MIDA CONTRACTING LLC</div></td>
+        <td>Dubai, DU, AE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">100 </td>
+        <td class='explanation'>Safety management expertise match | UAE market experience required...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://ae.indeed.com/viewjob?jk=5f10d768734f5699" target="_blank">HSE Officer</a><div class="muted">Parsons</div></td>
+        <td>Abu Dhabi, AZ, AE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">100 </td>
+        <td class='explanation'>Direct match for target role: HSE Officer | UAE market experience required...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/environmental-engineer-74029170/" target="_blank">Environmental Engineer</a><div class="muted">UNITED AL SAQER GROUP</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">107 </td>
+        <td class='explanation'>Environmental management experience | UAE market experience required...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/hse-inspector-74066196/" target="_blank">HSE Inspector</a><div class="muted">STAR SERVICES LLC</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">99 </td>
+        <td class='explanation'>Relevant HSE/Compliance experience...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/hse-inspector-74168232/" target="_blank">HSE Inspector</a><div class="muted">MWH Global</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">116 </td>
+        <td class='explanation'>Relevant HSE/Compliance experience...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/hse-supervisor-jo022534-74554834/" target="_blank">HSE Supervisor (JO022534)</a><div class="muted">MphExperts</div></td>
+        <td>UAE</td>
+        <td><span class="pill medium">Medium</span></td>
+        <td class="score">46 </td>
+        <td class='explanation'>Direct match for target role: HSE Supervisor...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/environment-and-sustainability-project-manager-saudi-arabia-73655557/" target="_blank">Environment and Sustainability Project Manager (Saudi Arabia)</a><div class="muted">Eram Talent</div></td>
+        <td>UAE</td>
+        <td><span class="pill medium">Medium</span></td>
+        <td class="score">45 </td>
+        <td class='explanation'>Relevant HSE/Compliance experience...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/hse-manager-operations-73938870/" target="_blank">HSE Manager - Operations</a><div class="muted">Dutco Group</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">114 </td>
+        <td class='explanation'>Direct match for target role: HSE Manager | Strong HSE management alignment | UAE market experience ...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/project-hse-manager-74029212/" target="_blank">Project HSE Manager</a><div class="muted">UNITED AL SAQER GROUP</div></td>
+        <td>UAE</td>
+        <td><span class="pill high-quality">High quality</span></td>
+        <td class="score">68 </td>
+        <td class='explanation'>Direct match for target role: HSE Manager | Strong HSE management alignment | UAE market experience ...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/hse-manager-74084715/" target="_blank">HSE Manager</a><div class="muted">Sisco</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">215 </td>
+        <td class='explanation'>Direct match for target role: HSE Manager | Strong HSE management alignment | UAE market experience ...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/qhse-manager-74275583/" target="_blank">QHSE Manager</a><div class="muted">Careers International</div></td>
+        <td>UAE</td>
+        <td><span class="pill very-high">Very High</span></td>
+        <td class="score">86 </td>
+        <td class='explanation'>Direct match for target role: HSE Manager | Strong HSE management alignment | Quality HSE specializa...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    
+    <tr>
+        <td><a href="https://www.bayt.com/en/uae/jobs/hse-manager-74275496/" target="_blank">HSE Manager</a><div class="muted">Careers International</div></td>
+        <td>UAE</td>
+        <td><span class="pill medium">Medium</span></td>
+        <td class="score">54 </td>
+        <td class='explanation'>Direct match for target role: HSE Manager | Strong HSE management alignment...</td>
+        
+        <td>
+          <button class="apply-btn" disabled>
+            🔒 NaukriGulf Only
+          </button>
+        </td>
+        
+    </tr>
+    </tbody>
+          </table>
+        </div>
+        
+
+  <div class="footer">
+    Data source: Database.
+    🗄️ Database backend active.
+    <button class="refresh-btn" onclick="location.reload()">🔄 Refresh</button>
+  </div>
+</div>
+
+<script>
+async function applyJob(btn) {
+    btn.disabled = true;
+    btn.innerText = "Applying...";
+
+    try {
+        const job = JSON.parse(btn.dataset.job);
+
+        const res = await fetch("http://127.0.0.1:8000/apply-one", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ job })
+        });
+
+        const data = await res.json();
+
+        if (data.status) {
+            btn.innerText = "✅ " + data.status;
+        } else {
+            btn.innerText = "⚠️ Unknown";
+        }
+
+    } catch (err) {
+        console.error(err);
+        btn.innerText = "❌ Failed";
+    }
+}
+
+async function skipJob(btn) {
+    btn.disabled = true;
+    btn.innerText = "⏭️ Skipped";
+
+    try {
+        const job = JSON.parse(btn.dataset.job);
+        console.log("Skipped job:", job.title);
+
+        // Mark job as seen/skipped in local storage or send to backend
+        const res = await fetch("http://127.0.0.1:8000/skip-job", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ job })
+        });
+
+        if (res.ok) {
+            btn.innerText = "✅ Skipped";
+        } else {
+            btn.innerText = "⚠️ Error";
+        }
+
+    } catch (err) {
+        console.error(err);
+        btn.innerText = "❌ Failed";
+    }
+}
+
+function openJob(btn) {
+    const link = btn.dataset.link;
+    if (link && link !== "#") {
+        window.open(link, "_blank");
+    } else {
+        alert("No valid job link available");
+    }
+}
+
+async function blockSimilar(btn) {
+    if (!confirm("Block similar jobs? This will hide jobs with similar titles/companies.")) {
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerText = "🚫 Blocking...";
+
+    try {
+        const job = JSON.parse(btn.dataset.job);
+        console.log("Blocking similar to:", job.title);
+
+        // Send to backend to add to exclusion list
+        const res = await fetch("http://127.0.0.1:8000/block-similar", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ job })
+        });
+
+        if (res.ok) {
+            btn.innerText = "✅ Blocked";
+        } else {
+            btn.innerText = "⚠️ Error";
+        }
+
+    } catch (err) {
+        console.error(err);
+        btn.innerText = "❌ Failed";
+    }
+}
+</script>
+
+</body>
+</html>

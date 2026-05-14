@@ -1,0 +1,58 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Locust: run_single_user (active file)",
+      "type": "python",
+      "request": "launch",
+      "python": "d:\\job-automation-system-1-main\\.locust_env\\Scripts\\python",
+      "program": "${file}",
+      "cwd": "${fileDirname}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [],
+      "env": {
+        "VIRTUAL_ENV": "d:\\job-automation-system-1-main\\.locust_env",
+        "PATH": "${workspaceFolder}\\.locust_env\\Scripts;${env:PATH}",
+        "GEVENT_SUPPORT": "True"
+      }
+    },
+    {
+      "name": "Pytest: all tests",
+      "type": "python",
+      "request": "launch",
+      "python": "d:\\job-automation-system-1-main\\.locust_env\\Scripts\\python",
+      "module": "pytest",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [
+        "-q"
+      ],
+      "env": {
+        "VIRTUAL_ENV": "d:\\job-automation-system-1-main\\.locust_env",
+        "PATH": "${workspaceFolder}\\.locust_env\\Scripts;${env:PATH}",
+        "GEVENT_SUPPORT": "True"
+      }
+    },
+    {
+      "name": "Pytest: current file",
+      "type": "python",
+      "request": "launch",
+      "python": "d:\\job-automation-system-1-main\\.locust_env\\Scripts\\python",
+      "module": "pytest",
+      "cwd": "${fileDirname}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [
+        "-q",
+        "${file}"
+      ],
+      "env": {
+        "VIRTUAL_ENV": "d:\\job-automation-system-1-main\\.locust_env",
+        "PATH": "${workspaceFolder}\\.locust_env\\Scripts;${env:PATH}",
+        "GEVENT_SUPPORT": "True"
+      }
+    }
+  ]
+}

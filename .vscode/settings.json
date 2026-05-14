@@ -1,0 +1,23 @@
+{
+  "python.defaultInterpreterPath": "d:\\job-automation-system-1-main\\.locust_env\\Scripts\\python",
+  "github.copilot.chat.mcpServers": {
+    "mcp-locust": {
+      "command": "d:\\job-automation-system-1-main\\.locust_env\\Scripts\\python",
+      "args": [
+        "-u",
+        "c:\\Users\\loyal\\.windsurf\\extensions\\locust.locust-vscode-extension-0.1.70-universal\\mcp\\server.py"
+      ],
+      "cwd": "${workspaceFolder}"
+    }
+  },
+  "github.copilot.experimental.mcpServers": {
+    "mcp-locust": {
+      "command": "d:\\job-automation-system-1-main\\.locust_env\\Scripts\\python",
+      "args": [
+        "-u",
+        "c:\\Users\\loyal\\.windsurf\\extensions\\locust.locust-vscode-extension-0.1.70-universal\\mcp\\server.py"
+      ],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}

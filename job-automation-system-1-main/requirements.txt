@@ -1,0 +1,36 @@
+requests
+python-dotenv
+schedule
+psycopg2-binary
+python-jobspy
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+playwright
+fastapi
+uvicorn[standard]
+slowapi>=0.1.9
+limits>=3.6.0
+python-multipart
+pydantic
+PyMuPDF
+python-docx
+filelock
+redis
+rq
+# python-jose with [cryptography] extra uses cryptography backend for JWT signing.
+# This avoids the pure-python ecdsa path vulnerable to CVE-2024-23342 (Minerva).
+python-jose[cryptography]
+passlib[bcrypt]
+alembic
+httpx
+openai>=1.0.0
+# diskcache is used by llm_scorer and telegram UI for local caching.
+# CVE-2025-69872: cache data is internally generated (not from untrusted sources),
+# which mitigates the deserialization risk. Upgrade when a patched release is available.
+diskcache>=5.6.3
+# rapidfuzz for fuzzy string matching in role intelligence scoring
+rapidfuzz>=2.0.0
+# spacy for NLP entity extraction in context resolver
+spacy>=3.7.0
