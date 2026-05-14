@@ -11,7 +11,12 @@ import json
 import os
 import uuid
 from datetime import datetime
+from threading import Lock
 from typing import Any, Dict, List, Optional
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 try:
     import psycopg2
@@ -22,8 +27,126 @@ except Exception:  # pragma: no cover - dependency may be installed by cloud lat
     Json = None
 
 
+_RICO_SCHEMA_DDL = """
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE IF NOT EXISTS rico_users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    external_user_id TEXT UNIQUE,
+    name TEXT,
+    email TEXT,
+    phone TEXT,
+    telegram_username TEXT,
+    telegram_chat_id TEXT,
+    source TEXT DEFAULT 'rico',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS rico_profiles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES rico_users(id) ON DELETE CASCADE,
+    profile JSONB NOT NULL DEFAULT '{}'::jsonb,
+    cv_file_url TEXT,
+    cv_text TEXT,
+    cv_structured JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(user_id)
+);
+
+CREATE TABLE IF NOT EXISTS rico_agent_settings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES rico_users(id) ON DELETE CASCADE,
+    settings JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(user_id)
+);
+
+CREATE TABLE IF NOT EXISTS rico_chat_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES rico_users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    message TEXT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS rico_learning_signals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES rico_users(id) ON DELETE CASCADE,
+    job_id TEXT,
+    action TEXT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS rico_job_recommendations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES rico_users(id) ON DELETE CASCADE,
+    job_key TEXT,
+    job JSONB NOT NULL DEFAULT '{}'::jsonb,
+    repo_score INTEGER,
+    rico_score INTEGER,
+    explanation TEXT,
+    status TEXT DEFAULT 'found',
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS rico_saved_searches (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES rico_users(id) ON DELETE CASCADE,
+    query TEXT NOT NULL,
+    filters JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(user_id, query)
+);
+
+CREATE TABLE IF NOT EXISTS rico_alerts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES rico_users(id) ON DELETE CASCADE,
+    channel TEXT NOT NULL,
+    alert_type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    sent_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS rico_webhook_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider TEXT NOT NULL DEFAULT 'jotform',
+    form_id TEXT,
+    submission_id TEXT NOT NULL,
+    user_id UUID REFERENCES rico_users(id) ON DELETE SET NULL,
+    external_user_id TEXT,
+    status TEXT NOT NULL DEFAULT 'processing',
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    processed_at TIMESTAMPTZ,
+    UNIQUE(provider, submission_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rico_users_email ON rico_users(email);
+CREATE INDEX IF NOT EXISTS idx_rico_users_telegram ON rico_users(telegram_username);
+CREATE INDEX IF NOT EXISTS idx_rico_chat_user_created ON rico_chat_history(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rico_signals_user_created ON rico_learning_signals(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rico_recommendations_user_status ON rico_job_recommendations(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_rico_saved_searches_user_created ON rico_saved_searches(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rico_webhook_events_submission ON rico_webhook_events(provider, submission_id);
+CREATE INDEX IF NOT EXISTS idx_rico_webhook_events_user ON rico_webhook_events(user_id);
+"""
+
+
 class RicoDB:
     """Thin PostgreSQL wrapper for Rico AI multi-user memory."""
+
+    _schema_lock = Lock()
+    _schema_ready_urls: set[str] = set()
 
     def __init__(self, database_url: Optional[str] = None) -> None:
         self.database_url = database_url or os.getenv("DATABASE_URL")
@@ -32,119 +155,41 @@ class RicoDB:
     def available(self) -> bool:
         return bool(self.database_url and psycopg2 is not None)
 
-    def connect(self):
+    def _ensure_schema(self, conn) -> None:
+        if not self.database_url:
+            return
+        if self.database_url in self._schema_ready_urls:
+            return
+
+        with self._schema_lock:
+            if self.database_url in self._schema_ready_urls:
+                return
+            with conn.cursor() as cur:
+                cur.execute(_RICO_SCHEMA_DDL)
+            conn.commit()
+            self._schema_ready_urls.add(self.database_url)
+
+    def connect(self, *, ensure_schema: bool = True):
         if not self.available:
             raise RuntimeError("RicoDB unavailable: DATABASE_URL or psycopg2 missing")
-        return psycopg2.connect(self.database_url, cursor_factory=RealDictCursor)
+        conn = psycopg2.connect(self.database_url, cursor_factory=RealDictCursor)
+        if not ensure_schema:
+            return conn
+        try:
+            self._ensure_schema(conn)
+        except Exception:
+            conn.close()
+            raise
+        return conn
 
     def init(self) -> None:
         """Create Rico tables in the existing Neon database."""
-        ddl = """
-        CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-        CREATE TABLE IF NOT EXISTS rico_users (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            external_user_id TEXT UNIQUE,
-            name TEXT,
-            email TEXT,
-            phone TEXT,
-            telegram_username TEXT,
-            telegram_chat_id TEXT,
-            source TEXT DEFAULT 'rico',
-            created_at TIMESTAMPTZ DEFAULT now(),
-            updated_at TIMESTAMPTZ DEFAULT now()
-        );
-
-        CREATE TABLE IF NOT EXISTS rico_profiles (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID REFERENCES rico_users(id) ON DELETE CASCADE,
-            profile JSONB NOT NULL DEFAULT '{}'::jsonb,
-            cv_file_url TEXT,
-            cv_text TEXT,
-            cv_structured JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at TIMESTAMPTZ DEFAULT now(),
-            updated_at TIMESTAMPTZ DEFAULT now(),
-            UNIQUE(user_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS rico_agent_settings (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID REFERENCES rico_users(id) ON DELETE CASCADE,
-            settings JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at TIMESTAMPTZ DEFAULT now(),
-            updated_at TIMESTAMPTZ DEFAULT now(),
-            UNIQUE(user_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS rico_chat_history (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID REFERENCES rico_users(id) ON DELETE CASCADE,
-            role TEXT NOT NULL,
-            message TEXT NOT NULL,
-            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at TIMESTAMPTZ DEFAULT now()
-        );
-
-        CREATE TABLE IF NOT EXISTS rico_learning_signals (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID REFERENCES rico_users(id) ON DELETE CASCADE,
-            job_id TEXT,
-            action TEXT NOT NULL,
-            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at TIMESTAMPTZ DEFAULT now()
-        );
-
-        CREATE TABLE IF NOT EXISTS rico_job_recommendations (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID REFERENCES rico_users(id) ON DELETE CASCADE,
-            job_key TEXT,
-            job JSONB NOT NULL DEFAULT '{}'::jsonb,
-            repo_score INTEGER,
-            rico_score INTEGER,
-            explanation TEXT,
-            status TEXT DEFAULT 'found',
-            created_at TIMESTAMPTZ DEFAULT now(),
-            updated_at TIMESTAMPTZ DEFAULT now()
-        );
-
-        CREATE TABLE IF NOT EXISTS rico_alerts (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID REFERENCES rico_users(id) ON DELETE CASCADE,
-            channel TEXT NOT NULL,
-            alert_type TEXT NOT NULL,
-            message TEXT NOT NULL,
-            status TEXT DEFAULT 'pending',
-            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at TIMESTAMPTZ DEFAULT now(),
-            sent_at TIMESTAMPTZ
-        );
-
-        CREATE TABLE IF NOT EXISTS rico_webhook_events (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            provider TEXT NOT NULL DEFAULT 'jotform',
-            form_id TEXT,
-            submission_id TEXT NOT NULL,
-            user_id UUID REFERENCES rico_users(id) ON DELETE SET NULL,
-            external_user_id TEXT,
-            status TEXT NOT NULL DEFAULT 'processing',
-            metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at TIMESTAMPTZ DEFAULT now(),
-            processed_at TIMESTAMPTZ,
-            UNIQUE(provider, submission_id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_rico_users_email ON rico_users(email);
-        CREATE INDEX IF NOT EXISTS idx_rico_users_telegram ON rico_users(telegram_username);
-        CREATE INDEX IF NOT EXISTS idx_rico_chat_user_created ON rico_chat_history(user_id, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_rico_signals_user_created ON rico_learning_signals(user_id, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_rico_recommendations_user_status ON rico_job_recommendations(user_id, status);
-        CREATE INDEX IF NOT EXISTS idx_rico_webhook_events_submission ON rico_webhook_events(provider, submission_id);
-        CREATE INDEX IF NOT EXISTS idx_rico_webhook_events_user ON rico_webhook_events(user_id);
-        """
-        with self.connect() as conn:
+        with self.connect(ensure_schema=False) as conn:
             with conn.cursor() as cur:
-                cur.execute(ddl)
+                cur.execute(_RICO_SCHEMA_DDL)
             conn.commit()
+        if self.database_url:
+            self._schema_ready_urls.add(self.database_url)
 
     def register_webhook_event(
         self,
@@ -372,24 +417,22 @@ class RicoDB:
         limit: int = 200,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        filters = ["user_id = %s"]
+        where_clauses = ["user_id = %s"]
         params: List[Any] = [user_id]
         if status:
-            filters.append("status = %s")
+            where_clauses.append("status = %s")
             params.append(status)
-        where = " AND ".join(filters)
+        where = " AND ".join(where_clauses)
+        sql = (
+            "SELECT job_key, job, repo_score, rico_score, explanation, status, created_at, updated_at "
+            "FROM rico_job_recommendations "
+            f"WHERE {where} "
+            "ORDER BY updated_at DESC "
+            "LIMIT %s OFFSET %s"
+        )
         with self.connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    SELECT job_key, job, repo_score, rico_score, explanation, status, created_at, updated_at
-                    FROM rico_job_recommendations
-                    WHERE {where}
-                    ORDER BY updated_at DESC
-                    LIMIT %s OFFSET %s
-                    """,
-                    params + [limit, offset],
-                )
+                cur.execute(sql, params + [limit, offset])
                 rows = cur.fetchall()
         result: List[Dict[str, Any]] = []
         for r in rows:
