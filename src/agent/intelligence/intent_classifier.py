@@ -119,6 +119,12 @@ _SKIP_PHRASES = frozenset([
     "not sure", "pass", "next question",
 ])
 
+_FOLLOW_UP_CONFIRMATION_PHRASES = frozenset([
+    "both please", "both", "all", "keep all", "keep them all", "yes keep all",
+    "continue", "ok continue", "okay continue", "yes continue",
+    "yes", "confirm", "confirmed", "proceed", "go ahead",
+])
+
 # ── Regex patterns ───────────────────────────────────────────────────────────
 
 _ROLE_CHANGE_RE = re.compile(
@@ -233,6 +239,9 @@ def classify_intent(message: str, *, has_cv_profile: bool = False) -> IntentResu
 
     if lower in _SKIP_PHRASES:
         return IntentResult("onboarding_answer", 0.9, "exact")
+
+    if lower in _FOLLOW_UP_CONFIRMATION_PHRASES:
+        return IntentResult("follow_up_confirmation", 1.0, "exact")
 
     # ── 3. Regex patterns (ordered by specificity) ───────────────────────
 

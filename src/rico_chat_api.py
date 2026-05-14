@@ -971,6 +971,15 @@ class RicoChatAPI:
                 profile=profile,
             )
 
+        # Follow-up confirmation — handle "both please", "keep all", etc.
+        if intent == "follow_up_confirmation":
+            response = {
+                "type": "follow_up_acknowledged",
+                "message": "Got it. Could you clarify what you'd like me to do next? For example, you can ask me to search for jobs, show your profile, or help with applications.",
+            }
+            self._append_chat(user_id, "assistant", response["message"])
+            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
+
         # Explicit job search (regex-matched "find ... jobs" etc.)
         if intent == "job_search_explicit":
             # Fall through to legacy router for entity extraction
