@@ -25,6 +25,8 @@ from psycopg2.extras import Json
 from src.rico_agent import RicoAgentSettings, RicoProfile
 from src.rico_db import RicoDB
 from src.rico_memory import RicoMemoryStore
+from src.services.profile_context_resolver import resolve_profile_context
+from src.services.identity_flow_mapper import IdentitySignal
 
 logger = logging.getLogger(__name__)
 _UTC = timezone.utc
@@ -569,6 +571,182 @@ def export_profile_data(user_id: str) -> dict[str, Any] | None:
 
     export_data["exported_at"] = str(datetime.now(_UTC))
     return export_data
+
+
+# ============================================================================
+# Identity Candidate Lookup (#97)
+# ============================================================================
+
+def _bundle_rows_to_profiles(rows: list[Any]) -> list[Any]:
+    """Convert raw DB rows to ProfileContext via RicoProfile bundles."""
+    profiles = []
+    seen_ids = set()
+    for row in rows:
+        user_id = str(row.get("id", ""))
+        if not user_id or user_id in seen_ids:
+            continue
+        seen_ids.add(user_id)
+        bundle = {
+            "id": row["id"],
+            "external_user_id": row["external_user_id"],
+            "name": row["name"],
+            "email": row["email"],
+            "phone": row["phone"],
+            "telegram_username": row["telegram_username"],
+            "profile": row.get("profile_data") or {},
+            "settings": row.get("settings_data") or {},
+        }
+        rico_profile = _bundle_to_profile(bundle)
+        profiles.append(resolve_profile_context(user_id, rico_profile))
+    return profiles
+
+
+def find_profiles_by_email(email: str) -> list[Any]:
+    """Find profiles by email (case-insensitive exact match)."""
+    if not email:
+        return []
+    email_norm = email.strip().lower()
+    candidates = []
+
+    db = _db()
+    if db:
+        try:
+            with db.connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT u.*, p.data as profile_data, s.data as settings_data
+                        FROM rico_users u
+                        LEFT JOIN rico_profiles p ON p.user_id = u.id
+                        LEFT JOIN rico_settings s ON s.user_id = u.id
+                        WHERE LOWER(u.email) = %s
+                        LIMIT 10
+                        """,
+                        (email_norm,)
+                    )
+                    rows = cur.fetchall()
+                    candidates.extend(_bundle_rows_to_profiles(rows))
+        except Exception:
+            logger.exception("profile_repo: find_profiles_by_email failed email=%s", email_norm)
+
+    # Memory fallback — linear scan over JSON profiles
+    if not candidates:
+        for user_id in _memory().list_profiles():
+            profile = _memory().load_profile(user_id)
+            if profile and getattr(profile, "email", None):
+                if str(profile.email).strip().lower() == email_norm:
+                    candidates.append(resolve_profile_context(user_id, profile))
+
+    return candidates
+
+
+def find_profiles_by_phone(phone: str) -> list[Any]:
+    """Find profiles by phone (digits-only match)."""
+    if not phone:
+        return []
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if len(digits) < 7:
+        return []
+    candidates = []
+
+    db = _db()
+    if db:
+        try:
+            with db.connect() as conn:
+                with conn.cursor() as cur:
+                    # Remove non-digits from stored phone and compare last N digits
+                    cur.execute(
+                        """
+                        SELECT u.*, p.data as profile_data, s.data as settings_data
+                        FROM rico_users u
+                        LEFT JOIN rico_profiles p ON p.user_id = u.id
+                        LEFT JOIN rico_settings s ON s.user_id = u.id
+                        WHERE REGEXP_REPLACE(u.phone, '[^0-9]', '', 'g') LIKE %s
+                        LIMIT 10
+                        """,
+                        (f"%{digits}",)
+                    )
+                    rows = cur.fetchall()
+                    candidates.extend(_bundle_rows_to_profiles(rows))
+        except Exception:
+            logger.exception("profile_repo: find_profiles_by_phone failed phone=%s", digits)
+
+    # Memory fallback
+    if not candidates:
+        for user_id in _memory().list_profiles():
+            profile = _memory().load_profile(user_id)
+            if profile and getattr(profile, "phone", None):
+                p_digits = "".join(ch for ch in str(profile.phone) if ch.isdigit())
+                if digits in p_digits or p_digits in digits:
+                    candidates.append(resolve_profile_context(user_id, profile))
+
+    return candidates
+
+
+def find_profiles_by_telegram_username(username: str) -> list[Any]:
+    """Find profiles by telegram username (case-insensitive, @ stripped)."""
+    if not username:
+        return []
+    username_norm = username.strip().lstrip("@").lower()
+    if not username_norm:
+        return []
+    candidates = []
+
+    db = _db()
+    if db:
+        try:
+            with db.connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT u.*, p.data as profile_data, s.data as settings_data
+                        FROM rico_users u
+                        LEFT JOIN rico_profiles p ON p.user_id = u.id
+                        LEFT JOIN rico_settings s ON s.user_id = u.id
+                        WHERE LOWER(u.telegram_username) = %s
+                        LIMIT 10
+                        """,
+                        (username_norm,)
+                    )
+                    rows = cur.fetchall()
+                    candidates.extend(_bundle_rows_to_profiles(rows))
+        except Exception:
+            logger.exception(
+                "profile_repo: find_profiles_by_telegram_username failed username=%s",
+                username_norm,
+            )
+
+    # Memory fallback
+    if not candidates:
+        for user_id in _memory().list_profiles():
+            profile = _memory().load_profile(user_id)
+            if profile and getattr(profile, "telegram_username", None):
+                if str(profile.telegram_username).strip().lstrip("@").lower() == username_norm:
+                    candidates.append(resolve_profile_context(user_id, profile))
+
+    return candidates
+
+
+def find_identity_candidates(signal: IdentitySignal) -> list[Any]:
+    """Collect all candidate profiles that might match an incoming identity signal.
+
+    De-duplicates across email, phone, and telegram lookups.
+    """
+    candidates_by_id: dict[str, Any] = {}
+
+    if signal.email:
+        for p in find_profiles_by_email(signal.email):
+            candidates_by_id[p.user_id] = p
+
+    if signal.phone:
+        for p in find_profiles_by_phone(signal.phone):
+            candidates_by_id[p.user_id] = p
+
+    if signal.telegram_username:
+        for p in find_profiles_by_telegram_username(signal.telegram_username):
+            candidates_by_id[p.user_id] = p
+
+    return list(candidates_by_id.values())
 
 
 # ============================================================================

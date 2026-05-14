@@ -7,6 +7,9 @@ import os
 from typing import Any, Dict, Optional
 
 from src.rico_db import RicoDB
+from src.repositories.profile_repo import find_identity_candidates
+from src.services.identity_flow_mapper import IdentitySignal, map_identity_flow
+from src.services.profile_context_resolver import resolve_profile_context
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,47 @@ def _active_form_ids() -> frozenset:
 def _resolve_user_id(answers: Dict[str, Any]) -> Optional[str]:
     """Derive a stable, unique user_id. Email preferred; telegram_username is fallback."""
     return answers.get("email") or answers.get("telegram_username") or None
+
+
+def _build_identity_signal(mapped: Dict[str, Any]) -> IdentitySignal:
+    """Build identity signal from a mapped Jotform submission."""
+    user = mapped.get("user") or {}
+    profile = mapped.get("profile") or {}
+
+    signal_user_id = user.get("external_user_id") or "jotform_pending"
+
+    signal_profile = resolve_profile_context(
+        user_id=signal_user_id,
+        raw={
+            **user,
+            **profile,
+        },
+    )
+
+    return IdentitySignal(
+        source="jotform",
+        user_id=user.get("external_user_id"),
+        telegram_username=user.get("telegram_username"),
+        email=user.get("email"),
+        phone=user.get("phone"),
+        name=user.get("name"),
+        profile=signal_profile,
+    )
+
+
+def _identity_resolution_metadata(resolution) -> Dict[str, Any]:
+    """Return JSON-safe identity resolution metadata."""
+    return {
+        "action": resolution.action,
+        "confidence": resolution.confidence,
+        "matched_user_id": resolution.matched_user_id,
+        "reasons": list(resolution.reasons or []),
+        "conflicts": {
+            key: list(value)
+            for key, value in (resolution.conflicts or {}).items()
+        },
+        "missing_fields": list(resolution.missing_fields or []),
+    }
 
 
 def map_jotform_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -139,6 +183,58 @@ def handle_jotform_submission(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
         return {"status": "ignored", "reason": "duplicate"}
 
+    # Identity resolution: check for existing profiles matching identity signals
+    # This runs before user_id check so phone/telegram-only submissions can be resolved
+    signal = _build_identity_signal(mapped)
+    candidates = find_identity_candidates(signal)
+    resolution = map_identity_flow(signal, candidates)
+    resolution_meta = _identity_resolution_metadata(resolution)
+
+    logger.info(
+        "jotform_webhook: identity resolution submission=%s action=%s confidence=%s matched_user_id=%s",
+        submission_id,
+        resolution.action,
+        resolution.confidence,
+        resolution.matched_user_id,
+    )
+
+    if resolution.action == "merge" and resolution.matched_user_id:
+        user_id = resolution.matched_user_id
+        mapped["user"]["external_user_id"] = resolution.matched_user_id
+        # Proceed to upsert with matched profile - skip user_id check below
+    elif resolution.action == "ask_user":
+        db.mark_webhook_event_processed(
+            provider="jotform",
+            submission_id=submission_id,
+            status="pending_identity_confirmation",
+            metadata={
+                "external_user_id": user_id,
+                "identity_resolution": resolution_meta,
+            },
+        )
+        return {
+            "status": "accepted",
+            "reason": "pending_identity_confirmation",
+            "identity_resolution": resolution_meta,
+        }
+
+    elif resolution.action == "ignore":
+        db.mark_webhook_event_processed(
+            provider="jotform",
+            submission_id=submission_id,
+            status="ignored_identity_signal",
+            metadata={
+                "external_user_id": user_id,
+                "identity_resolution": resolution_meta,
+            },
+        )
+        return {
+            "status": "ignored",
+            "reason": "weak_identity_signal",
+            "identity_resolution": resolution_meta,
+        }
+
+    # Only check user_id if identity resolution didn't set it via merge
     if not user_id:
         logger.info(
             "jotform_webhook: no stable user_id in submission=%s — skipping DB write",
