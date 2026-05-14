@@ -38,6 +38,13 @@ VALID_STATUSES: Set[str] = {
 _LOCK_TIMEOUT_S = 10  # max wait for file lock before raising
 
 
+def _require_user_id_for_production(user_id: Optional[str], operation: str) -> None:
+    """Require user_id in production environments for sensitive operations."""
+    env = (os.getenv("APP_ENV") or os.getenv("ENV") or "").lower()
+    if env in {"production", "prod"} and not user_id:
+        raise RuntimeError(f"{operation} requires user_id in production")
+
+
 # ─── Low-level I/O ────────────────────────────────────────────────────────────
 
 def _atomic_write(path: str, data: List[Dict[str, Any]]) -> None:
@@ -137,6 +144,7 @@ def mark_applied(
     if status not in VALID_STATUSES:
         status = "applied"
 
+    _require_user_id_for_production(user_id, "mark_applied")
     if user_id is None:
         logger.warning("LEGACY_FALLBACK_NO_USER_ID mark_applied writing to shared global state")
 
@@ -153,12 +161,12 @@ def mark_applied(
                 if user_id:
                     user_applied_jobs = [j for j in applied_jobs if j.get("user_id") == user_id]
                     if _is_in_list(job, user_applied_jobs):
-                        print(f"Job already marked as applied for user: {job.get('title', '')}")
+                        logger.warning("Applied job already exists", extra={"job_id": job_id, "user_id": user_id})
                         return False
                 else:
                     # Legacy behavior: check all jobs
                     if _is_in_list(job, applied_jobs):
-                        print(f"Job already marked as applied: {job.get('title', '')}")
+                        logger.warning("Applied job already exists", extra={"job_id": job_id})
                         return False
 
                 entry: Dict[str, Any] = {
@@ -179,11 +187,11 @@ def mark_applied(
                 applied_jobs.append(entry)
                 save_applied_jobs(applied_jobs)
 
-        print(f"✅ Marked as applied: {job.get('title', '')} - {job.get('company', '')}")
+        logger.info("Marked job as applied", extra={"job_id": job_id, "user_id": user_id})
         return True
 
     except FileLockTimeout:
-        print(f"⚠️ Could not acquire lock for mark_applied (timeout={_LOCK_TIMEOUT_S}s)")
+        logger.error("Could not acquire applications lock", extra={"timeout": _LOCK_TIMEOUT_S})
         return False
 
 
@@ -194,6 +202,7 @@ def is_applied(job: Dict[str, Any], user_id: Optional[str] = None) -> bool:
     and normalised title+company match.
     When user_id is provided, only checks jobs for that user.
     """
+    _require_user_id_for_production(user_id, "is_applied")
     if not isinstance(job, dict):
         return False
     applied_jobs = load_applied_jobs()
@@ -205,12 +214,18 @@ def is_applied(job: Dict[str, Any], user_id: Optional[str] = None) -> bool:
     return _is_in_list(job, applied_jobs)
 
 
-def is_applied_batch(jobs: List[Dict[str, Any]]) -> Dict[str, bool]:
+def is_applied_batch(
+    jobs: List[Dict[str, Any]],
+    user_id: Optional[str] = None,
+) -> Dict[str, bool]:
     """
     Batch version of is_applied() — reads the file ONCE for all jobs.
     Returns {job_id: bool} mapping.
     """
+    _require_user_id_for_production(user_id, "is_applied_batch")
     applied_jobs = load_applied_jobs()
+    if user_id:
+        applied_jobs = [j for j in applied_jobs if j.get("user_id") == user_id]
     return {get_job_id(j): _is_in_list(j, applied_jobs) for j in jobs}
 
 
@@ -259,15 +274,17 @@ def update_application_status(
     job: Dict[str, Any],
     status: str,
     notes: str = "",
+    user_id: Optional[str] = None,
 ) -> bool:
     """
     Update application status. Thread/process-safe. Status is validated.
     Returns True if record was found and updated.
     """
+    _require_user_id_for_production(user_id, "update_application_status")
     if not isinstance(job, dict):
         return False
     if status not in VALID_STATUSES:
-        print(f"❌ Invalid status '{status}'. Must be one of: {VALID_STATUSES}")
+        logger.warning(f"Invalid status '{status}'. Must be one of: {VALID_STATUSES}")
         return False
 
     try:
@@ -280,6 +297,8 @@ def update_application_status(
                 for rec in applied_jobs:
                     if not isinstance(rec, dict):
                         continue
+                    if user_id is not None and rec.get("user_id") != user_id:
+                        continue
                     if rec.get("job_id") in (job_id, legacy_id):
                         rec["status"] = status
                         rec["date_updated"] = datetime.now().isoformat()
@@ -290,25 +309,31 @@ def update_application_status(
                         if status == "rejected" and notes:
                             rec["rejection_reason"] = notes
                         save_applied_jobs(applied_jobs)
-                        print(f"✅ Updated status to {status}: {job.get('title', '')}")
+                        logger.info(f"Updated status to {status}", extra={"job_id": job_id, "user_id": user_id})
                         return True
 
-        print(f"❌ Applied job not found: {job.get('title', '')}")
-        return False
+                logger.warning(f"Applied job not found", extra={"job_id": job_id, "user_id": user_id})
+                return False
 
     except FileLockTimeout:
-        print("⚠️ Could not acquire lock for update_application_status")
+        logger.error("Could not acquire lock for update_application_status", extra={"timeout": _LOCK_TIMEOUT_S})
         return False
 
 
-def get_applied_jobs() -> List[Dict[str, Any]]:
+def get_applied_jobs(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """Get all applied jobs (read-only, no lock needed)."""
-    return load_applied_jobs()
+    _require_user_id_for_production(user_id, "get_applied_jobs")
+    jobs = load_applied_jobs()
+    if user_id:
+        return [j for j in jobs if isinstance(j, dict) and j.get("user_id") == user_id]
+    logger.warning("LEGACY_FALLBACK_NO_USER_ID get_applied_jobs reading shared global state")
+    return jobs
 
 
-def get_application_stats() -> Dict[str, Any]:
+def get_application_stats(user_id: Optional[str] = None) -> Dict[str, Any]:
     """Compute application statistics from the persisted list."""
-    applied_jobs = load_applied_jobs()
+    _require_user_id_for_production(user_id, "get_application_stats")
+    applied_jobs = get_applied_jobs(user_id=user_id)
 
     if not applied_jobs:
         return {
@@ -350,15 +375,17 @@ def get_application_stats() -> Dict[str, Any]:
 
 def filter_unapplied_jobs(
     jobs_with_scores: List[tuple],
+    user_id: Optional[str] = None,
 ) -> List[tuple]:
     """
     Filter out already-applied jobs.
     Uses batch check to read applied_jobs.json exactly once.
     """
+    _require_user_id_for_production(user_id, "filter_unapplied_jobs")
     if not jobs_with_scores:
         return []
     jobs = [j for j, _ in jobs_with_scores]
-    applied_map = is_applied_batch(jobs)
+    applied_map = is_applied_batch(jobs, user_id=user_id)
     return [
         (job, score)
         for (job, score) in jobs_with_scores
