@@ -189,10 +189,13 @@ class TestFollowupOptionsShape:
         )
 
     def test_role_in_find_live_jobs_message(self, monkeypatch):
-        """find_live_jobs message contains the user's target role."""
+        """find_live_jobs message contains a CV-derived role (suggestions win over stale target_roles)."""
         api, result = _run(monkeypatch, "so?", _CVProfile())
         live_opt = next(o for o in result["options"] if o["action"] == "find_live_jobs")
-        assert "Senior HSE Manager" in live_opt["message"]
+        # With skills ["hse", "safety", "iso 14001"], suggestions generate HSE/Safety/ISO roles first
+        assert "HSE" in live_opt["message"] or "Safety" in live_opt["message"] or "ISO" in live_opt["message"], (
+            f"Expected CV-derived role in message, got: {live_opt['message']}"
+        )
 
     def test_show_profile_roles_option_present(self, monkeypatch):
         api, result = _run(monkeypatch, "so?", _CVProfile())

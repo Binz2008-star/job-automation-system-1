@@ -232,7 +232,12 @@ class RicoChatAPI:
             self._profile_value(profile, "years_experience"),
             self._as_list(self._profile_value(profile, "industries")),
         )
-        role = target_roles[0] if target_roles else (suggestions[0]["label"] if suggestions else "your target role")
+        # Prefer fresh CV-derived suggestions over potentially stale target_roles
+        role = (
+            suggestions[0]["label"] if suggestions
+            else target_roles[0] if target_roles
+            else "your target role"
+        )
 
         response: dict[str, Any] = {
             "type": "options",
@@ -805,8 +810,14 @@ class RicoChatAPI:
         profile = get_profile(user_id)
         has_cv = self._has_cv_profile(profile)
 
+        logger.info(
+            "rico_followup_check user=%s has_cv=%s msg=%r followup=%s",
+            user_id, has_cv, message, self._looks_like_next_step_followup(message),
+        )
+
         # Fast path: short follow-up after role confirmation → instant options
         if has_cv and self._looks_like_next_step_followup(message):
+            logger.info("rico_followup_hit user=%s msg=%r", user_id, message)
             return self._finalize(
                 self._handle_next_step_options(user_id, profile),
                 self.SOURCE_KEYWORD,
