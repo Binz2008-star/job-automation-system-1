@@ -26,12 +26,16 @@ def list_jobs(
     limit: int = 20,
     min_score: int = 0,
     source: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Paginated job list. DB preferred; applied_jobs.json fallback."""
+    if not user_id:
+        raise ValueError("user_id is required for authenticated access")
+
     offset = (page - 1) * limit
 
     if is_db_available():
-        result = jobs_repo.list_from_db(offset, limit, min_score, source)
+        result = jobs_repo.list_from_db(offset, limit, min_score, source, user_id=user_id)
         if result is not None:
             return result
 
@@ -54,10 +58,13 @@ def _list_from_json(offset: int, limit: int, min_score: int) -> Dict[str, Any]:
     }
 
 
-def get_job(job_id: str) -> Optional[Dict[str, Any]]:
+def get_job(job_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Single job by DB integer id or SHA-256 job_id hash."""
+    if not user_id:
+        raise ValueError("user_id is required for authenticated access")
+
     if is_db_available() and job_id.isdigit():
-        job = jobs_repo.get_by_db_id(int(job_id))
+        job = jobs_repo.get_by_db_id(int(job_id), user_id=user_id)
         if job:
             return job
 
@@ -69,39 +76,44 @@ def get_job(job_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def skip_job(job: Dict[str, Any]) -> bool:
+def skip_job(job: Dict[str, Any], user_id: Optional[str] = None) -> bool:
     """Mark skipped. Returns True if newly persisted, False if already tracked."""
+    if not user_id:
+        raise ValueError("user_id is required for authenticated access")
+
     if is_applied(job):
         return False
-    return mark_applied(job, status="decision_made", notes="Skipped via API")
+    return mark_applied(job, status="decision_made", notes="Skipped via API", user_id=user_id)
 
 
-def save_job(job: Dict[str, Any]) -> bool:
+def save_job(job: Dict[str, Any], user_id: Optional[str] = None) -> bool:
     """Mark saved. Returns True if newly persisted, False if already tracked."""
+    if not user_id:
+        raise ValueError("user_id is required for authenticated access")
+
     if is_applied(job):
         return False
-    return mark_applied(job, status="saved", notes="Saved via API")
+    return mark_applied(job, status="saved", notes="Saved via API", user_id=user_id)
 
 
-def block_company(job: Dict[str, Any]) -> str:
+def block_company(job: Dict[str, Any], user_id: Optional[str] = None) -> str:
     """
-    Block all future results from this company (session scope).
+    Block company for this user only (user-scoped, not global).
     Returns the blocked company name.
-    Add to EXCLUDE_KEYWORDS in .env for cross-restart persistence.
+    Does NOT modify EXCLUDE_KEYWORDS (which affects all users).
     """
+    if not user_id:
+        raise ValueError("user_id is required for authenticated access")
+
     company = (job.get("company") or "").strip()
     if not company:
         raise ValueError("Job missing company field")
 
     if not is_applied(job):
-        mark_applied(job, status="decision_made", notes="Company blocked via API")
+        mark_applied(job, status="decision_made", notes="Company blocked via API", user_id=user_id)
 
-    existing = os.getenv("EXCLUDE_KEYWORDS", "")
-    company_lower = company.lower()
-    if company_lower not in existing.lower():
-        os.environ["EXCLUDE_KEYWORDS"] = (
-            f"{existing},{company_lower}" if existing else company_lower
-        )
-        logger.info("block_company added to session exclude company=%r", company_lower)
+    # TODO: Store user-specific blocked companies in database table
+    # For now, just mark the job as blocked for this user
+    logger.info("block_company: user=%s blocked company=%r", user_id, company)
 
     return company

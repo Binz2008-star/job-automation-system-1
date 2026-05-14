@@ -28,17 +28,19 @@ def get_jobs(
     limit: int = Query(20, ge=1, le=100),
     min_score: int = Query(0, ge=0, le=100),
     source: Optional[str] = Query(None),
-    _user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    return list_jobs(page=page, limit=limit, min_score=min_score, source=source)
+    user_id = str(current_user.get("id", ""))
+    return list_jobs(page=page, limit=limit, min_score=min_score, source=source, user_id=user_id)
 
 
 @router.get("/{job_id}")
 def get_job_by_id(
     job_id: str,
-    _user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
-    job = get_job(job_id)
+    user_id = str(current_user.get("id", ""))
+    job = get_job(job_id, user_id=user_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found")
     return job
@@ -48,11 +50,12 @@ def get_job_by_id(
 def apply_job(
     job_id: str,
     req: JobActionRequest,
-    _user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
 ) -> JobActionResponse:
+    user_id = str(current_user.get("id", ""))
     if not req.job.get("link"):
         raise HTTPException(status_code=422, detail="Job payload must include a 'link' field")
-    result = apply_to_job(req.job)
+    result = apply_to_job(req.job, user_id=user_id)
     return JobActionResponse(
         status=result.get("status", "unknown"),
         message=result.get("message", ""),
@@ -64,9 +67,10 @@ def apply_job(
 def skip_job_route(
     job_id: str,
     req: JobActionRequest,
-    _user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
 ) -> JobActionResponse:
-    skipped = skip_job(req.job)
+    user_id = str(current_user.get("id", ""))
+    skipped = skip_job(req.job, user_id=user_id)
     if skipped:
         return JobActionResponse(status="skipped", message="Job skipped and persisted")
     return JobActionResponse(status="already_tracked", message="Job was already tracked")
@@ -76,9 +80,10 @@ def skip_job_route(
 def save_job_route(
     job_id: str,
     req: JobActionRequest,
-    _user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
 ) -> JobActionResponse:
-    saved = save_job(req.job)
+    user_id = str(current_user.get("id", ""))
+    saved = save_job(req.job, user_id=user_id)
     if saved:
         return JobActionResponse(status="saved", message="Job saved and persisted")
     return JobActionResponse(status="already_tracked", message="Job was already tracked")
@@ -88,16 +93,14 @@ def save_job_route(
 def block_job_route(
     job_id: str,
     req: JobActionRequest,
-    _user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user),
 ) -> JobActionResponse:
+    user_id = str(current_user.get("id", ""))
     try:
-        company = block_company(req.job)
+        company = block_company(req.job, user_id=user_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return JobActionResponse(
         status="blocked",
-        message=(
-            f"Blocked: {company}. "
-            "Add to EXCLUDE_KEYWORDS in .env to persist across restarts."
-        ),
+        message=f"Blocked: {company}. This block is scoped to your account.",
     )

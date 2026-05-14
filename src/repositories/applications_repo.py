@@ -76,11 +76,18 @@ def _provision_db_user_id(db: Any, user_id: str) -> str:
         raise HTTPException(status_code=503, detail="Database error resolving user")
 
 
+def _warn_legacy_fallback(operation: str) -> None:
+    logger.warning("LEGACY_FALLBACK_NO_USER_ID operation=%s", operation)
+
+
 # ── Public API ───────────────────────────────────────────────────────────────
 
 
 def get_all(user_id: str) -> List[Dict[str, Any]]:
-    """Load tracked applications for a specific user (SaaS path)."""
+    """Load tracked applications for a specific user. user_id is required for authenticated access."""
+    if not user_id:
+        raise ValueError("user_id is required for authenticated access")
+
     db = _db()
     if not db:
         raise HTTPException(status_code=503, detail="Database unavailable")
@@ -90,7 +97,10 @@ def get_all(user_id: str) -> List[Dict[str, Any]]:
 
 
 def get_stats(user_id: str) -> Dict[str, Any]:
-    """Aggregate statistics for a specific user (SaaS path)."""
+    """Aggregate statistics for a specific user. user_id is required for authenticated access."""
+    if not user_id:
+        raise ValueError("user_id is required for authenticated access")
+
     db = _db()
     if not db:
         raise HTTPException(status_code=503, detail="Database unavailable")
@@ -100,7 +110,10 @@ def get_stats(user_id: str) -> Dict[str, Any]:
 
 
 def find_by_job_id(job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
-    """Find a single application record by its job_id hash for a specific user."""
+    """Find a single application record by job_id for a user. user_id is required for authenticated access."""
+    if not user_id:
+        raise ValueError("user_id is required for authenticated access")
+
     db = _db()
     if not db:
         raise HTTPException(status_code=503, detail="Database unavailable")
@@ -116,7 +129,10 @@ def find_by_job_id(job_id: str, user_id: str) -> Optional[Dict[str, Any]]:
 def update_status(
     job: Dict[str, Any], status: str, user_id: str, notes: str = ""
 ) -> bool:
-    """Update application status for a specific user (SaaS path)."""
+    """Update application status for a specific user. user_id is required for authenticated access."""
+    if not user_id:
+        raise ValueError("user_id is required for authenticated access")
+
     db = _db()
     if not db:
         raise HTTPException(status_code=503, detail="Database unavailable")

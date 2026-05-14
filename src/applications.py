@@ -118,6 +118,7 @@ def mark_applied(
     job: Dict[str, Any],
     status: str = "applied",
     notes: str = "",
+    user_id: Optional[str] = None,
 ) -> bool:
     """
     Mark a job as applied.
@@ -154,6 +155,7 @@ def mark_applied(
                     "notes": notes or "",
                     "interview_date": None,
                     "rejection_reason": None,
+                    "user_id": user_id,
                 }
                 applied_jobs.append(entry)
                 save_applied_jobs(applied_jobs)
