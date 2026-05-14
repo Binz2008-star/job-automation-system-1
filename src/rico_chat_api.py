@@ -37,6 +37,7 @@ from src.repositories.onboarding_repo import (
     set_onboarding_status,
 )
 from src.repositories.profile_repo import get_profile, upsert_profile
+from src.services.profile_context_resolver import resolve_profile_context
 
 logger = logging.getLogger(__name__)
 
@@ -798,6 +799,15 @@ class RicoChatAPI:
         mark_onboarding_complete(user_id)
         return self._handle_active_user(user_id, message)
 
+    def _resolve_profile(self, user_id: str):
+        """Load and normalise profile into a ProfileContext.
+
+        This is the migration point for #96 — eventually all callers
+        will consume ProfileContext directly instead of raw dict/objects.
+        """
+        raw = get_profile(user_id)
+        return resolve_profile_context(user_id, raw)
+
     def _handle_active_user(self, user_id: str, message: str) -> dict[str, Any]:
         """Intent-first active-user handler.
 
@@ -807,8 +817,8 @@ class RicoChatAPI:
           3. For role-like text, use 3-tier role classifier
           4. Unknown / nonsense → clarification, not search
         """
-        profile = get_profile(user_id)
-        has_cv = self._has_cv_profile(profile)
+        profile = self._resolve_profile(user_id)
+        has_cv = profile.has_cv
 
         logger.info(
             "rico_followup_check user=%s has_cv=%s msg=%r followup=%s",
