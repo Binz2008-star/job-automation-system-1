@@ -1,0 +1,315 @@
+# Rico AI — Architecture Diagrams (Mermaid)
+
+## 1. High-Level System Architecture
+
+```mermaid
+graph TB
+    subgraph Clients["Client Surfaces"]
+        TG[Telegram Bot]
+        WEB[Web App<br/>Next.js 14]
+        JF[Jotform<br/>Onboarding]
+        GP[GitHub Pages<br/>Dashboard]
+    end
+
+    subgraph APIGateway["API Gateway Layer"]
+        FA[FastAPI<br/>src/api/app.py]
+        AUTH[JWT Auth<br/>bcrypt + httpOnly cookies]
+        RL[Rate Limiting<br/>slowapi]
+        CORS[CORS Middleware]
+    end
+
+    subgraph Conversational["Conversational Layer"]
+        RC[src/rico_chat_api.py<br/>1,576 LOC]
+        IC[Intent Classification]
+        RI[Role Intelligence]
+        NLU[NLU EN/AR/mixed]
+        MEM[Memory Retrieval]
+    end
+
+    subgraph AgentBrain["Agent Brain"]
+        RA[src/rico_agent.py]
+        SC[Scoring Engine]
+        DE[Decision Engine]
+        TR[Tool Registry]
+        SF[Safety Guardrails]
+        RT[Agent Runtime<br/>src/agent/runtime.py]
+    end
+
+    subgraph Legacy["Legacy Pipeline"]
+        JS[JobSpy Fetch]
+        FI[Filter & Dedupe]
+        LLM[HF + Keyword Scoring]
+        DEC[Decision Engine V2]
+        NOT[Telegram Notifications]
+        GM[Gmail Sync]
+        FB[Feedback Loop]
+        DB[Dashboard Generator]
+    end
+
+    subgraph Data["Data & State"]
+        NPG[(Neon PostgreSQL)]
+        RDS[(Redis<br/>Optional)]
+        JSON[JSON Fallback<br/>data/*.json]
+    end
+
+    TG -->|Webhook / API| FA
+    WEB -->|REST + WebSocket| FA
+    JF -->|POST /api/webhooks/jotform| FA
+    FA --> AUTH
+    AUTH --> RL
+    RL --> RC
+    RC --> IC & RI & NLU & MEM
+    IC --> RA
+    RA --> SC & DE & TR & SF
+    TR --> RT
+    RT -->|Bridge| Legacy
+    JS --> FI --> LLM --> DEC --> NOT
+    DEC --> GM & FB & DB
+    RA --> NPG
+    RT --> NPG
+    Legacy --> NPG
+    NPG -->|Cache| RDS
+    NPG -.->|Fallback| JSON
+```
+
+## 2. Daily Pipeline Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant GA as GitHub Actions
+    participant RD as run_daily.py
+    participant JS as job_sources.py
+    participant FI as filter.py
+    participant LS as llm_scorer.py
+    participant DE as decision_engine.py
+    participant TB as telegram_bot.py
+    participant DB as Neon DB
+    participant GM as gmail_importer.py
+    participant FB as feedback_loop.py
+    participant DH as dashboard.py
+
+    GA->>RD: Trigger (08:00 + 18:00 UAE)
+    RD->>DB: init_db()
+    RD->>RD: build_orchestrator()
+    RD->>JS: fetch_and_score()
+    JS-->>RD: ~43 jobs
+    RD->>FI: filter_new_jobs()
+    FI-->>RD: deduplicated jobs
+    RD->>LS: score_jobs_llm()
+    LS-->>RD: HF + keyword scores
+    RD->>DE: generate_decision_insights()
+    DE-->>RD: probability scores
+    RD->>TB: send_telegram_message()
+    TB-->>RD: notification sent
+    RD->>DB: persist_history()
+    RD->>GM: sync_gmail()
+    GM-->>RD: 22 emails classified
+    RD->>FB: run_feedback_loop()
+    FB-->>RD: learning signals
+    RD->>DH: build_dashboard()
+    DH-->>RD: dashboard.html
+    RD->>GA: deploy to GitHub Pages
+```
+
+## 3. Chat Interaction Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant TE as Telegram/Web
+    participant API as FastAPI Router
+    participant RC as rico_chat_api.py
+    participant IC as Intent Classifier
+    participant PR as Profile Repo
+    participant OA as OpenAI Agent
+    participant RT as Agent Runtime
+    participant TR as Tool Registry
+    participant DB as Neon DB
+
+    U->>TE: "Find HSE Manager jobs in Dubai"
+    TE->>API: POST /api/v1/agent/chat
+    API->>RC: process(message)
+    RC->>IC: classify_intent()
+    IC-->>RC: intent=search_jobs, entities={role, location}
+    RC->>PR: get_profile(user_id)
+    PR-->>RC: RicoProfile
+    RC->>RC: _is_live_job_search_request()
+    RC->>OA: generate_response()
+    OA-->>RC: structured reply
+    RC->>RT: handle_action(user_id, "search_jobs", ...)
+    RT->>TR: execute tool
+    TR-->>RT: job matches
+    RT->>DB: log_action()
+    RC-->>API: JSON response
+    API-->>TE: job cards + explanations
+    TE-->>U: "Found 5 matches..."
+```
+
+## 4. Data Model Overview
+
+```mermaid
+erDiagram
+    USERS ||--o{ PROFILES : has
+    USERS ||--o{ CHAT_HISTORY : sends
+    USERS ||--o{ APPLICATIONS : tracks
+    USERS ||--o{ LEARNING_SIGNALS : generates
+    PROFILES ||--o{ JOBS : searches
+    JOBS ||--o{ SCORES : has
+    USERS ||--o{ ACTION_AUDIT_LOG : performs
+
+    USERS {
+        string email PK
+        string password_hash
+        string role
+        datetime created_at
+    }
+
+    PROFILES {
+        string user_id PK
+        string name
+        string email
+        string telegram_username
+        json target_roles
+        float years_experience
+        int salary_expectation_aed
+        json preferred_cities
+        json skills
+        json deal_breakers
+        json green_flags
+        json red_flags
+        string cv_filename
+        string cv_status
+        json settings
+    }
+
+    CHAT_HISTORY {
+        int id PK
+        string user_id FK
+        string role
+        text message
+        datetime timestamp
+    }
+
+    JOBS {
+        string id PK
+        string title
+        string company
+        string location
+        text description
+        string url
+        datetime fetched_at
+    }
+
+    SCORES {
+        int id PK
+        string job_id FK
+        string user_id FK
+        float hf_score
+        float keyword_score
+        float combined_score
+        datetime scored_at
+    }
+
+    APPLICATIONS {
+        int id PK
+        string user_id FK
+        string job_id FK
+        string status
+        text notes
+        datetime applied_at
+        datetime updated_at
+    }
+
+    LEARNING_SIGNALS {
+        int id PK
+        string user_id FK
+        string job_id FK
+        string signal_type
+        float confidence
+        datetime created_at
+    }
+
+    ACTION_AUDIT_LOG {
+        string action_id PK
+        string action_type
+        string user_email FK
+        string job_id
+        string job_title
+        string result_status
+        int duration_ms
+        string source
+        datetime timestamp
+    }
+```
+
+## 5. AI Provider Fallback Chain
+
+```mermaid
+graph LR
+    A[User Request] --> B{OpenAI<br/>gpt-4.1-mini}
+    B -->|Success| C[Return Response]
+    B -->|Rate Limited / Error| D{DeepSeek<br/>deepseek-v4-flash}
+    D -->|Success| C
+    D -->|Rate Limited / Error| E{HuggingFace<br/>all-MiniLM-L6-v2}
+    E -->|Success| C
+    E -->|Unavailable| F[Keyword Fallback]
+    F --> C
+```
+
+## 6. Onboarding State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Started: Jotform submitted
+    Started --> ProfileCreated: Webhook processed
+    ProfileCreated --> CVUploaded: CV attached
+    ProfileCreated --> ManualEntry: No CV
+    CVUploaded --> Extracting: Trigger CV parser
+    Extracting --> Enriched: Skills extracted
+    ManualEntry --> Enriched: Profile complete
+    Enriched --> OnboardingComplete: All fields filled
+    OnboardingComplete --> Active: First job search
+    Active --> Learning: Action feedback
+    Learning --> Active: Preferences updated
+```
+
+## 7. Repository Pattern Structure
+
+```mermaid
+graph LR
+    subgraph Router["API Router"]
+        R1[jobs_router.py]
+        R2[agent_router.py]
+        R3[user_router.py]
+    end
+
+    subgraph Service["Service Layer"]
+        S1[jobs_service.py]
+        S2[chat_service.py]
+        S3[apply_service.py]
+    end
+
+    subgraph Repository["Repository Layer"]
+        REP1[jobs_repo.py]
+        REP2[profile_repo.py]
+        REP3[applications_repo.py]
+        REP4[audit_repo.py]
+        REP5[learning_repo.py]
+    end
+
+    subgraph Database["Database"]
+        DB1[(Neon PostgreSQL)]
+        DB2[(Redis Cache)]
+        DB3[JSON Fallback]
+    end
+
+    R1 --> S1
+    R2 --> S2
+    R3 --> S3
+    S1 --> REP1
+    S2 --> REP2 & REP5
+    S3 --> REP3 & REP4
+    REP1 & REP2 & REP3 & REP4 & REP5 --> DB1
+    DB1 --> DB2
+    DB1 -.-> DB3
+```
