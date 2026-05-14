@@ -62,7 +62,7 @@ jobs:
         run: python -m src.follow_up
 
       - name: Deploy dashboard to GitHub Pages
-        if: always()
+        if: success()
         run: |
           if [ ! -f dashboard.html ]; then
             echo "dashboard.html not found — skipping deploy"
