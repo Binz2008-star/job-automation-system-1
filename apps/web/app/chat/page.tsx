@@ -57,6 +57,25 @@ function ThinkingIndicator() {
   );
 }
 
+function OperationStateIndicator({ state, message }: { state: string; message: string }) {
+  const icons = {
+    reading: "📄",
+    extracting: "⚙️",
+    searching: "🔍",
+    confirming: "✓",
+  };
+  const icon = icons[state as keyof typeof icons] || "⏳";
+
+  return (
+    <div className="flex justify-start animate-pulse">
+      <div className="bg-[#13132a] border border-white/5 rounded-2xl rounded-tl-none px-4 py-3 flex gap-2 items-center backdrop-blur-md">
+        <span className="text-lg">{icon}</span>
+        <span className="text-[13px] text-[#8080a0]">{message}</span>
+      </div>
+    </div>
+  );
+}
+
 function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt: string) => void }) {
   const score = match.score ?? 0;
   const scoreLabel = score >= 0.8 ? "Strong match" : score >= 0.6 ? "Good match" : "Possible match";
@@ -222,6 +241,7 @@ export default function ChatPage() {
   const [uploadError, setUploadError] = useState("");
   const [chatAudience, setChatAudience] = useState<ChatAudience>("checking");
   const [mounted, setMounted] = useState(false);
+  const [operationState, setOperationState] = useState<{ state: string; message: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -306,6 +326,10 @@ export default function ChatPage() {
 
     setMessages((prev) => [...prev, { id: nextId(), role: "user", text: trimmed }]);
     setThinking(true);
+    // Set operation state for job search if message indicates job search
+    if (trimmed.toLowerCase().includes("job") || trimmed.toLowerCase().includes("find") || trimmed.toLowerCase().includes("search")) {
+      setOperationState({ state: "searching", message: "Searching for jobs..." });
+    }
     scrollBottom();
 
     const controller = new AbortController();
@@ -385,6 +409,7 @@ export default function ChatPage() {
       clearTimeout(slowHintId);
       setSlowHint(false);
       setThinking(false);
+      setOperationState(null);
       scrollBottom();
       textareaRef.current?.focus();
     }
@@ -397,6 +422,7 @@ export default function ChatPage() {
     setUploadError("");
     setMessages((prev) => [...prev, { id: nextId(), role: "user", text: `📎 Uploading CV: ${file.name}` }]);
     setThinking(true);
+    setOperationState({ state: "reading", message: "Reading PDF file..." });
     scrollBottom();
     try {
       const result: UploadCVResponse =
@@ -469,12 +495,14 @@ export default function ChatPage() {
       setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: `Could not process CV: ${msg}. Please make sure it's a PDF under 10 MB.` }]);
     } finally {
       setThinking(false);
+      setOperationState(null);
       scrollBottom();
     }
   }
 
   async function handleConfirmProfile(preview: ProfilePreview, filename: string, messageId: number) {
     setThinking(true);
+    setOperationState({ state: "confirming", message: "Saving profile..." });
     try {
       const PROXY = "/proxy";
       const res = await fetch(`${PROXY}/api/v1/rico/confirm-cv-profile`, {
@@ -493,6 +521,7 @@ export default function ChatPage() {
       setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: `Could not confirm profile: ${msg}. Please try again.` }]);
     } finally {
       setThinking(false);
+      setOperationState(null);
       scrollBottom();
     }
   }
@@ -687,7 +716,11 @@ export default function ChatPage() {
 
           {thinking && (
             <div className="flex flex-col gap-2">
-              <ThinkingIndicator />
+              {operationState ? (
+                <OperationStateIndicator state={operationState.state} message={operationState.message} />
+              ) : (
+                <ThinkingIndicator />
+              )}
               {slowHint && (
                 <p className="text-[11px] text-[#5a5a7a] pl-9 animate-pulse">
                   Rico is waking up — first request after idle can take up to a minute…
