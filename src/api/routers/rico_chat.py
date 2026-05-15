@@ -792,7 +792,35 @@ async def rico_upload_cv(
             raise HTTPException(status_code=422, detail="Only PDF files are accepted")
 
         safe_name = _safe_filename(file.filename)
-        parsed = chat_service.parse_cv(data, filename=safe_name)
+
+        # Parse CV with defensive handling for dataclass vs dict return
+        try:
+            parsed_raw = chat_service.parse_cv(data, filename=safe_name)
+
+            if hasattr(parsed_raw, "to_dict"):
+                parsed = parsed_raw.to_dict()
+            elif isinstance(parsed_raw, dict):
+                parsed = parsed_raw
+            else:
+                raise TypeError(f"Unexpected CV parser result type: {type(parsed_raw)}")
+        except Exception as exc:
+            logger.exception(
+                "cv_upload_parse_error ref=%s user=%s filename=%s bytes=%d error=%s",
+                request_ref,
+                resolved_user_id,
+                safe_name,
+                len(data),
+                str(exc),
+            )
+            return {
+                "ok": False,
+                "status": "error",
+                "error_ref": request_ref,
+                "message": (
+                    f"CV upload failed. Reference: {request_ref}. "
+                    "I could not read this PDF. Please try another text-based PDF under 10 MB."
+                ),
+            }
 
         # Log CV upload details for debugging
         logger.info(
@@ -808,7 +836,28 @@ async def rico_upload_cv(
 
         # Detect document type to prevent company profiles from being treated as CVs
         from src.cv_parser import CVParser
-        doc_type = CVParser().detect_document_type(parsed.get("text", ""))
+        try:
+            parser = CVParser()
+            if hasattr(parser, "detect_document_type"):
+                doc_type = parser.detect_document_type(parsed.get("text", ""))
+            else:
+                # Fallback if detect_document_type doesn't exist in production
+                logger.warning(
+                    "cv_upload_detect_method_missing ref=%s user=%s filename=%s",
+                    request_ref,
+                    resolved_user_id,
+                    safe_name,
+                )
+                doc_type = "cv"  # Default to CV if method doesn't exist
+        except Exception as exc:
+            logger.exception(
+                "cv_upload_detect_error ref=%s user=%s filename=%s error=%s",
+                request_ref,
+                resolved_user_id,
+                safe_name,
+                str(exc),
+            )
+            doc_type = "cv"  # Default to CV on detection error
 
         # Update log with detected document type
         logger.info(
