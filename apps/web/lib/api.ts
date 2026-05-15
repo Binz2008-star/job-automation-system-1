@@ -690,28 +690,70 @@ export interface ChatApiResponse {
     content?: string;
   };
 }
-
 // ── CV upload ─────────────────────────────────────────────────────────────────
 
 export interface ParsedCV {
   text: string;
-  skills: string[];
   emails: string[];
   phones: string[];
-  years_experience_hint?: number | null;
+  skills: string[];
   certifications: string[];
   languages: string[];
   extraction_quality?: string;
   extracted_chars?: number;
 }
 
+export interface ProfilePreview {
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  current_role: string | null;
+  experience_years: number | null;
+  target_roles: string[];
+  skills: string[];
+  certifications: string[];
+  languages: string[];
+}
+
 export interface UploadCVResponse {
-  user_id: string;
-  filename: string;
-  parsed: ParsedCV;
-  ok?: boolean;
+  ok: boolean;
+  status: string;
   document_type?: string;
+  extraction_quality?: string;
+  extracted_chars?: number;
+  filename?: string;
+  preview?: ProfilePreview;
+  parsed?: ParsedCV;
   message?: string;
+  user_id?: string;
+}
+
+export interface ConfirmCVProfileRequest {
+  preview: ProfilePreview;
+  filename: string;
+}
+
+export interface ConfirmCVProfileResponse {
+  ok: boolean;
+  status: string;
+  message: string;
+  profile: Record<string, unknown>;
+}
+
+export async function confirmCVProfile(
+  payload: ConfirmCVProfileRequest
+): Promise<ConfirmCVProfileResponse> {
+  const res = await fetch(`${PROXY}/api/v1/rico/confirm-cv-profile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
+    throw new Error(extractDetail(body.detail, `Confirm profile failed: ${res.status}`));
+  }
+  return res.json() as Promise<ConfirmCVProfileResponse>;
 }
 
 function extractDetail(detail: unknown, fallback: string): string {

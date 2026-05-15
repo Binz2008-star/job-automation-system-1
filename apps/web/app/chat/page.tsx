@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatApiResponse, JobMatch, NextAction, RicoOption, UploadCVResponse } from "@/lib/api";
+import type { ChatApiResponse, JobMatch, NextAction, ProfilePreview, RicoOption, UploadCVResponse } from "@/lib/api";
 import { fetchMe, logout, sendChat, sendChatPublic, uploadCV } from "@/lib/api";
 import { buildAuthHref } from "@/lib/redirect";
 import Link from "next/link";
@@ -24,6 +24,9 @@ interface Message {
   roleName?: string;
   reasons?: string[];
   next_actions?: NextAction[];
+  preview?: ProfilePreview;
+  filename?: string;
+  extractionQuality?: string;
 }
 
 type ChatAudience = "checking" | "authenticated" | "public";
@@ -404,7 +407,6 @@ export default function ChatPage() {
       if (mounted && result.user_id && result.user_id.startsWith("public:")) {
         localStorage.setItem("rico_public_uid", result.user_id);
       }
-      const p = result.parsed;
 
       // Check if document was rejected due to wrong type
       if (result.ok === false && result.document_type) {
@@ -413,26 +415,82 @@ export default function ChatPage() {
         return;
       }
 
-      const summary = [
-        p.skills?.length ? `Skills detected: ${p.skills.slice(0, 6).join(", ")}` : "",
-        p.emails?.length ? `Email: ${p.emails[0]}` : "",
-        p.phones?.length ? `Phone: ${p.phones[0]}` : "",
-        p.years_experience_hint ? `Experience: ~${p.years_experience_hint} years` : "",
-      ].filter(Boolean).join(" · ");
+      // Check if preview is ready for confirmation
+      if (result.status === "preview_ready" && result.preview) {
+        const preview = result.preview;
+        const previewText = (
+          `CV profile preview\n\n` +
+          `Name: ${preview.name || "—"}\n` +
+          `Email: ${preview.email || "—"}\n` +
+          `Phone: ${preview.phone || "—"}\n` +
+          `Current role: ${preview.current_role || "—"}\n` +
+          `Experience: ${preview.experience_years ? `~${preview.experience_years} years` : "—"}\n` +
+          `Skills: ${preview.skills?.slice(0, 6).join(", ") || "—"}\n` +
+          `Document quality: ${result.extraction_quality || "unknown"}\n\n` +
+          `Use this profile for job matching?`
+        );
 
-      let text: string;
-      if (p.extraction_quality === "poor") {
-        text = `CV received: ${file.name}, but I could not read enough text from the document. It may be scanned or image-based. Please upload a text-based PDF or DOCX for better extraction.`;
-      } else if (p.extraction_quality === "partial") {
-        text = `CV received: ${file.name}. I extracted the readable details and updated your profile.${summary ? `\n\n${summary}` : ""}\n\nTell me your target roles and I'll start finding matches.`;
-      } else {
-        text = `CV received: ${file.name}. I extracted your details and pre-filled your profile.${summary ? `\n\n${summary}` : ""}\n\nTell me your target roles and I'll start finding matches.`;
+        const message: Message = {
+          id: nextId(),
+          role: "rico",
+          text: previewText,
+          type: "profile_preview",
+          preview: preview,
+          filename: result.filename,
+          extractionQuality: result.extraction_quality,
+        };
+        setMessages((prev) => [...prev, message]);
+        return;
       }
-      setMessages((prev) => [...prev, { id: nextId(), role: "rico", text }]);
+
+      // Fallback for old response format (shouldn't happen with new backend)
+      const p = result.parsed;
+      if (p) {
+        const summary = [
+          p.skills?.length ? `Skills detected: ${p.skills.slice(0, 6).join(", ")}` : "",
+          p.emails?.length ? `Email: ${p.emails[0]}` : "",
+          p.phones?.length ? `Phone: ${p.phones[0]}` : "",
+          p.extracted_chars ? `Chars extracted: ${p.extracted_chars}` : "",
+        ].filter(Boolean).join(" · ");
+
+        let text: string;
+        if (p.extraction_quality === "poor") {
+          text = `CV received: ${file.name}, but I could not read enough text from the document. It may be scanned or image-based. Please upload a text-based PDF or DOCX for better extraction.`;
+        } else if (p.extraction_quality === "partial") {
+          text = `CV received: ${file.name}. I extracted the readable details and updated your profile.${summary ? `\n\n${summary}` : ""}\n\nTell me your target roles and I'll start finding matches.`;
+        } else {
+          text = `CV received: ${file.name}. I extracted your details and pre-filled your profile.${summary ? `\n\n${summary}` : ""}\n\nTell me your target roles and I'll start finding matches.`;
+        }
+        setMessages((prev) => [...prev, { id: nextId(), role: "rico", text }]);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Upload failed";
       setUploadError(msg);
       setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: `Could not process CV: ${msg}. Please make sure it's a PDF under 10 MB.` }]);
+    } finally {
+      setThinking(false);
+      scrollBottom();
+    }
+  }
+
+  async function handleConfirmProfile(preview: ProfilePreview, filename: string, messageId: number) {
+    setThinking(true);
+    try {
+      const PROXY = "/proxy";
+      const res = await fetch(`${PROXY}/api/v1/rico/confirm-cv-profile`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ preview, filename }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
+        throw new Error(body.detail ? String(body.detail) : `Confirm profile failed: ${res.status}`);
+      }
+      setMessages((prev) => prev.map(m => m.id === messageId ? { ...m, type: "profile_confirmed", text: "Profile confirmed. I can now use it for job matching. Tell me your target roles and I'll start finding matches." } : m));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Confirmation failed";
+      setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: `Could not confirm profile: ${msg}. Please try again.` }]);
     } finally {
       setThinking(false);
       scrollBottom();
@@ -566,7 +624,25 @@ export default function ChatPage() {
                   </div>
                 )}
 
-                {/* Option buttons */}
+                {/* Profile preview confirmation buttons */}
+                {m.type === "profile_preview" && m.preview && m.filename && (
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={() => handleConfirmProfile(m.preview!, m.filename!, m.id)}
+                      disabled={thinking}
+                      className="text-[12px] px-4 py-2 rounded-lg bg-[#5dcaa5] text-white font-medium hover:bg-[#4db894] transition-colors disabled:opacity-50"
+                    >
+                      Use this profile
+                    </button>
+                    <button
+                      onClick={() => sendMessage("I want to edit my profile before saving")}
+                      disabled={thinking}
+                      className="text-[12px] px-4 py-2 rounded-lg border border-white/10 text-[#8080a0] hover:border-[#5b4fff]/40 hover:text-white transition-colors disabled:opacity-50"
+                    >
+                      Edit before saving
+                    </button>
+                  </div>
+                )}
                 {m.options && m.options.length > 0 && (
                   <OptionButtons options={m.options} onAction={(prompt) => sendMessage(prompt)} />
                 )}
