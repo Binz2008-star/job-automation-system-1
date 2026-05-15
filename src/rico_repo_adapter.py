@@ -224,131 +224,139 @@ class RicoSystem:
         started_at = datetime.now(_UTC).isoformat()
         limit = limit or self.config.max_matches
 
-        # Fetch and score jobs
-        jobs = self.repo.fetch_jobs()
-        scored = self.repo.score_jobs_with_existing_engine(jobs)
-        self.repo.persist_jobs(scored)
+        try:
+            # Fetch and score jobs
+            jobs = self.repo.fetch_jobs()
+            scored = self.repo.score_jobs_with_existing_engine(jobs)
+            self.repo.persist_jobs(scored)
 
-        # Make agent decisions
-        decisions = self.repo.make_agent_decisions(scored)
-        selected: List[Tuple[Dict[str, Any], int]] = []
+            # Make agent decisions
+            decisions = self.repo.make_agent_decisions(scored)
+            selected: List[Tuple[Dict[str, Any], int]] = []
 
-        for decision in decisions:
-            if getattr(decision, "decision", None) in {"apply", "watch"}:
-                selected.append((decision.job, int(decision.final_score)))
+            for decision in decisions:
+                if getattr(decision, "decision", None) in {"apply", "watch"}:
+                    selected.append((decision.job, int(decision.final_score)))
 
-        selected = sorted(selected, key=lambda item: item[1], reverse=True)
-        selected = self.repo.remove_applied_jobs(selected)
-        selected = selected[:limit]
+            selected = sorted(selected, key=lambda item: item[1], reverse=True)
+            selected = self.repo.remove_applied_jobs(selected)
+            selected = selected[:limit]
 
-        # Enrich with decision engine probability if enabled
-        enriched = []
-        if self.config.enable_decision_engine:
-            try:
-                from src.decision_engine import JobDecisionEngine
-                from src.profile import get_candidate_profile, get_target_roles
+            # Enrich with decision engine probability if enabled
+            enriched = []
+            if self.config.enable_decision_engine:
+                try:
+                    from src.decision_engine import JobDecisionEngine
+                    from src.profile import get_candidate_profile, get_target_roles
 
-                engine = JobDecisionEngine.from_loaders(
-                    get_candidate_profile,
-                    get_target_roles,
-                )
+                    engine = JobDecisionEngine.from_loaders(
+                        get_candidate_profile,
+                        get_target_roles,
+                    )
 
-                for job, score in selected:
-                    try:
-                        prob_result = engine.calculate_success_probability(job)
-                        job["success_probability"] = prob_result.probability
-                        job["probability_confidence"] = prob_result.confidence
-                    except Exception as e:
-                        logger.warning(f"decision_engine_probability_failed: {e}")
-                        job["success_probability"] = None
-                    enriched.append((job, score))
+                    for job, score in selected:
+                        try:
+                            prob_result = engine.calculate_success_probability(job)
+                            job["success_probability"] = prob_result.probability
+                            job["probability_confidence"] = prob_result.confidence
+                        except Exception as e:
+                            logger.warning(f"decision_engine_probability_failed: {e}")
+                            job["success_probability"] = None
+                        enriched.append((job, score))
 
-                logger.info("adapter_decision_engine_enrichment", extra={"count": len(enriched)})
-            except Exception as e:
-                logger.warning(f"decision_engine_unavailable: {e}")
+                    logger.info("adapter_decision_engine_enrichment", extra={"count": len(enriched)})
+                except Exception as e:
+                    logger.warning(f"decision_engine_unavailable: {e}")
+                    enriched = selected
+            else:
                 enriched = selected
-        else:
-            enriched = selected
 
-        # Record learning signals if enabled
-        if self.config.enable_learning_repo:
-            try:
-                from src.repositories.learning_repo import get_learning_repository
+            # Record learning signals if enabled
+            if self.config.enable_learning_repo:
+                try:
+                    from src.repositories.learning_repo import get_learning_repository
 
-                repo = get_learning_repository()
-                for job, score in enriched:
-                    try:
-                        repo.record_signal(
-                            canonical_user_id=profile.user_id,
-                            signal_type="role_preference",
-                            signal_value=job.get("title", ""),
-                            signal_weight=0.5,  # Moderate weight for saved matches
-                            source="rico_adapter",
-                            metadata={
-                                "company": job.get("company"),
-                                "location": job.get("location"),
-                                "repo_score": score,
-                                "success_probability": job.get("success_probability"),
-                            }
-                        )
-                    except Exception as e:
-                        logger.warning(f"learning_signal_record_failed: {e}")
+                    repo = get_learning_repository()
+                    for job, score in enriched:
+                        try:
+                            repo.record_signal(
+                                canonical_user_id=profile.user_id,
+                                signal_type="role_preference",
+                                signal_value=job.get("title", ""),
+                                signal_weight=0.5,  # Moderate weight for saved matches
+                                source="rico_adapter",
+                                metadata={
+                                    "company": job.get("company"),
+                                    "location": job.get("location"),
+                                    "repo_score": score,
+                                    "success_probability": job.get("success_probability"),
+                                }
+                            )
+                        except Exception as e:
+                            logger.warning(f"learning_signal_record_failed: {e}")
 
-                logger.info("adapter_learning_signals_recorded", extra={"count": len(enriched)})
-            except Exception as e:
-                logger.warning(f"learning_repo_unavailable: {e}")
+                    logger.info("adapter_learning_signals_recorded", extra={"count": len(enriched)})
+                except Exception as e:
+                    logger.warning(f"learning_repo_unavailable: {e}")
 
-        # Agent recommendations
-        rico_recommendations = self.agent.recommend_jobs(
-            profile=profile,
-            jobs=[job for job, _ in enriched],
-        )
+            # Agent recommendations
+            rico_recommendations = self.agent.recommend_jobs(
+                profile=profile,
+                jobs=[job for job, _ in enriched],
+            )
 
-        # Preserve existing pipeline scores alongside Rico explanations
-        by_identity = {
-            (str(job.get("title", "")), str(job.get("company", ""))): score
-            for job, score in enriched
-        }
-        final_matches: List[Tuple[Dict[str, Any], int]] = []
-        for recommendation in rico_recommendations:
-            job = recommendation["job"]
-            job["rico_score"] = recommendation["score"]
-            job["rico_explanation"] = recommendation["explanation"]
-            repo_score = by_identity.get((str(job.get("title", "")), str(job.get("company", ""))), recommendation["score"])
-            final_matches.append((job, int(repo_score)))
+            # Preserve existing pipeline scores alongside Rico explanations
+            by_identity = {
+                (str(job.get("title", "")), str(job.get("company", ""))): score
+                for job, score in enriched
+            }
+            final_matches: List[Tuple[Dict[str, Any], int]] = []
+            for recommendation in rico_recommendations:
+                job = recommendation["job"]
+                job["rico_score"] = recommendation["score"]
+                job["rico_explanation"] = recommendation["explanation"]
+                repo_score = by_identity.get((str(job.get("title", "")), str(job.get("company", ""))), recommendation["score"])
+                final_matches.append((job, int(repo_score)))
 
-        self.repo.notify_telegram(final_matches)
-        self.repo.track_ai_decisions(final_matches)
+            self.repo.notify_telegram(final_matches)
+            self.repo.track_ai_decisions(final_matches)
 
-        completed_at = datetime.now(_UTC).isoformat()
+            completed_at = datetime.now(_UTC).isoformat()
 
-        return {
-            "status": "completed",
-            "started_at": started_at,
-            "completed_at": completed_at,
-            "jobs_fetched": len(jobs),
-            "jobs_scored": len(scored),
-            "matches_sent": len(final_matches),
-            "matches": [
-                {
-                    "title": job.get("title"),
-                    "company": job.get("company"),
-                    "location": job.get("location") or job.get("city"),
-                    "repo_score": score,
-                    "rico_score": job.get("rico_score"),
-                    "rico_explanation": job.get("rico_explanation"),
-                    "success_probability": job.get("success_probability"),
-                    "url": job.get("url") or job.get("job_url"),
-                }
-                for job, score in final_matches
-            ],
-            "metrics": {
-                "decision_engine_enabled": self.config.enable_decision_engine,
-                "learning_repo_enabled": self.config.enable_learning_repo,
-                "caching_enabled": self.config.enable_caching,
-                "llm_enabled": self.config.enable_llm,
-            },
-        }
+            return {
+                "status": "completed",
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "jobs_fetched": len(jobs),
+                "jobs_scored": len(scored),
+                "matches_sent": len(final_matches),
+                "matches": [
+                    {
+                        "title": job.get("title"),
+                        "company": job.get("company"),
+                        "location": job.get("location") or job.get("city"),
+                        "repo_score": score,
+                        "rico_score": job.get("rico_score"),
+                        "rico_explanation": job.get("rico_explanation"),
+                        "success_probability": job.get("success_probability"),
+                        "url": job.get("url") or job.get("job_url"),
+                    }
+                    for job, score in final_matches
+                ],
+                "metrics": {
+                    "decision_engine_enabled": self.config.enable_decision_engine,
+                    "learning_repo_enabled": self.config.enable_learning_repo,
+                    "caching_enabled": self.config.enable_caching,
+                    "llm_enabled": self.config.enable_llm,
+                },
+            }
+        except Exception as exc:
+            logger.exception("run_for_profile_failed user=%s", profile.user_id)
+            return {
+                "status": "error",
+                "error": str(exc),
+                "matches": [],
+            }
 
 
 def run_rico_for_default_profile(config: Optional[AdapterConfig] = None) -> Dict[str, Any]:

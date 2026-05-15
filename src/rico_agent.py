@@ -91,24 +91,28 @@ class RicoAgent:
     def recommend_jobs(self, profile: RicoProfile, jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         recommendations: List[Dict[str, Any]] = []
         for job in jobs:
-            score_result = self._score_job(profile, job)
-            if self._should_reject(profile, job, score_result):
+            try:
+                score_result = self._score_job(profile, job)
+                if self._should_reject(profile, job, score_result):
+                    continue
+                recommendations.append({
+                    "job": job,
+                    "score": score_result["score"],
+                    "explanation": score_result["explanation"],
+                    "reasoning": score_result.get("reasoning", {}),
+                    "actions": [
+                        "Apply Now",
+                        "Save",
+                        "Ignore",
+                        "See Details",
+                        "Write Cover Letter",
+                        "Prepare Interview",
+                        "Change Preferences",
+                    ],
+                })
+            except Exception as exc:
+                logger.warning(f"job_scoring_failed job={job.get('title', 'unknown')} error={exc}")
                 continue
-            recommendations.append({
-                "job": job,
-                "score": score_result["score"],
-                "explanation": score_result["explanation"],
-                "reasoning": score_result.get("reasoning", {}),
-                "actions": [
-                    "Apply Now",
-                    "Save",
-                    "Ignore",
-                    "See Details",
-                    "Write Cover Letter",
-                    "Prepare Interview",
-                    "Change Preferences",
-                ],
-            })
 
         return sorted(recommendations, key=lambda item: item["score"], reverse=True)
 
