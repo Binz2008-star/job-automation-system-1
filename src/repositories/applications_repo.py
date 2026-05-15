@@ -178,6 +178,33 @@ def create(
     return _mark_applied(job, status=status)
 
 
+def create_manual(
+    title: str,
+    company: str,
+    location: str = "",
+    url: str = "",
+    status: str = "applied",
+    user_id: Optional[str] = None,
+) -> bool:
+    """Create a manual application record with auto-generated job_id."""
+    import hashlib
+
+    # Generate job_id from title+company+location for manual records
+    raw = f"{title}|{company}|{location}".lower().strip()
+    job_id = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+    return create(
+        job_id=job_id,
+        title=title,
+        company=company,
+        location=location,
+        url=url,
+        status=status,
+        source="manual",
+        user_id=user_id,
+    )
+
+
 def update_status(
     job: Dict[str, Any], status: str, user_id: Optional[str] = None, notes: str = ""
 ) -> bool:

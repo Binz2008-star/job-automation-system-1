@@ -11,10 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.deps import get_current_user_id
 from src.applications import VALID_STATUSES
-from src.repositories.applications_repo import create, find_by_job_id, get_all, get_stats, update_status
+from src.repositories.applications_repo import create, create_manual, find_by_job_id, get_all, get_stats, update_status
 from src.schemas.applications import (
     ApplicationCreateRequest,
     ApplicationListResponse,
+    ManualApplicationCreateRequest,
     StatusUpdateRequest,
     StatusUpdateResponse,
 )
@@ -50,6 +51,40 @@ def create_application(
         status=req.status,
         job_id=req.job_id,
         message="Application record created",
+    )
+
+
+@router.post("/manual", response_model=StatusUpdateResponse)
+def create_manual_application(
+    req: ManualApplicationCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> StatusUpdateResponse:
+    if req.status not in VALID_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid status {req.status!r}. Valid: {sorted(VALID_STATUSES)}",
+        )
+
+    ok = create_manual(
+        title=req.title,
+        company=req.company,
+        location=req.location,
+        url=req.url,
+        status=req.status,
+        user_id=user_id,
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to create manual application record")
+
+    # Generate job_id for response
+    import hashlib
+    raw = f"{req.title}|{req.company}|{req.location}".lower().strip()
+    job_id = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+    return StatusUpdateResponse(
+        status=req.status,
+        job_id=job_id,
+        message="Manual application record created",
     )
 
 

@@ -23,6 +23,14 @@ class ApplicationCreateRequest(BaseModel):
     source: str = Field(default="manual")
 
 
+class ManualApplicationCreateRequest(BaseModel):
+    title: str = Field(..., min_length=1)
+    company: str = Field(..., min_length=1)
+    location: str = ""
+    url: str = ""
+    status: str = Field(default="applied")
+
+
 class StatusUpdateRequest(BaseModel):
     status: str = Field(..., min_length=1)
     notes: Optional[str] = None
