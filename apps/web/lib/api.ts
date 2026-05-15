@@ -702,6 +702,8 @@ export interface ProfilePreview {
   current_role: string | null;
   experience_years: number | null;
   target_roles: string[];
+  skills_detected: string[];
+  existing_skills: string[];
   skills: string[];
   certifications: string[];
   languages: string[];
@@ -733,9 +735,14 @@ export interface ConfirmCVProfileResponse {
 }
 
 export async function confirmCVProfile(
-  payload: ConfirmCVProfileRequest
+  payload: ConfirmCVProfileRequest,
+  userId?: string
 ): Promise<ConfirmCVProfileResponse> {
-  const res = await fetch(`${PROXY}/api/v1/rico/confirm-cv-profile`, {
+  const url = new URL(`${PROXY}/api/v1/rico/confirm-cv-profile`);
+  if (userId) {
+    url.searchParams.set("user_id", userId);
+  }
+  const res = await fetch(url.toString(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",

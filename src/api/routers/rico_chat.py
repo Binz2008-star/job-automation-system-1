@@ -39,17 +39,23 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from src.api.deps import get_current_user, get_current_user_id
 from src.api.rate_limit import LIMIT_CHAT, LIMIT_UPLOAD, LIMIT_WEBHOOK, limiter
 from src.repositories.profile_repo import (
+    delete_search,
     get_profile,
+    list_saved_searches,
+    save_search,
     upsert_profile,
 )
+from src.repositories.learning_repo import get_learning_repository
 from src.repositories.onboarding_repo import mark_onboarding_complete
 from src.agent.responses.schema import RicoResponse, build_error_response, _generate_debug_id
 from src.agent.runtime import agent_runtime
 from src.models.onboarding import ONBOARDING_IN_PROGRESS
 from src.rico_agent import RicoAgent
 from src.rico_chat_api import generate_error_ref
+from src.rico_env import get_ai_provider
 from src.rico_hf_client import generate_text, is_available as hf_ok
 from src.rico_openai_agent import RicoOpenAIAgent
+from src.rico_openai_runtime import call_openai_minimal
 from src.agent.responses.schema import build_error_response
 
 logger = logging.getLogger(__name__)
@@ -465,45 +471,45 @@ def rico_delete_saved_search(request: Request, search_id: str) -> None:
 def rico_chat(request: Request, payload: RicoChatRequest) -> dict[str, Any]:
     """Authenticated chat endpoint."""
     start_time = time.time()
-    error_ref = generate_error_ref()
+    request_ref = generate_error_ref()
     try:
         user = get_current_user(request)
         user_id = user["email"]
 
         logger.info(
-            "chat_request user=%s message_len=%d error_ref=%s",
+            "chat_request user=%s message_len=%d request_ref=%s",
             user_id,
             len(payload.message),
-            error_ref,
+            request_ref,
         )
 
         result = chat_service.send_message(user_id=user_id, message=payload.message)
 
         logger.info(
-            "chat_response user=%s intent=%s matches=%d error_ref=%s",
+            "chat_response user=%s intent=%s matches=%d request_ref=%s",
             user_id,
             result.get("intent", "unknown"),
             len(result.get("matches", [])),
-            error_ref,
+            request_ref,
         )
 
         _metrics.record_request((time.time() - start_time) * 1000)
         return result
     except Exception as exc:
         logger.exception(
-            "chat_error user=%s message_len=%d error=%s error_ref=%s",
+            "chat_error user=%s message_len=%d error=%s request_ref=%s",
             user_id if "user_id" in locals() else "unknown",
             len(payload.message) if "payload" in locals() else 0,
             str(exc),
-            error_ref,
+            request_ref,
         )
         _metrics.record_request((time.time() - start_time) * 1000)
         error_response = build_error_response(
-            f"I couldn't process your request. Reference: {error_ref}. Please try again or rephrase your message.",
+            f"I couldn't process your request. Reference: {request_ref}. Please try again or rephrase your message.",
             log_exc=exc,
             user_id=user_id if "user_id" in locals() else "unknown",
         )
-        error_response["error_ref"] = error_ref
+        error_response["error_ref"] = request_ref
         return error_response
 
 
@@ -517,7 +523,7 @@ def rico_chat_public(request: Request, payload: RicoPublicChatRequest) -> Public
     - email: for users who completed Jotform onboarding (user_id = email)
     """
     start_time = time.time()
-    error_ref = generate_error_ref()
+    request_ref = generate_error_ref()
 
     # Validate that either session_id or email is provided
     if not payload.email and not payload.session_id:
@@ -532,20 +538,20 @@ def rico_chat_public(request: Request, payload: RicoPublicChatRequest) -> Public
             user_id = f"public:{safe_sid}"
 
         logger.info(
-            "chat_public_request user=%s message_len=%d error_ref=%s",
+            "chat_public_request user=%s message_len=%d request_ref=%s",
             user_id,
             len(payload.message),
-            error_ref,
+            request_ref,
         )
 
         result = chat_service.send_message(user_id=user_id, message=payload.message)
 
         logger.info(
-            "chat_public_response user=%s intent=%s matches=%d error_ref=%s",
+            "chat_public_response user=%s intent=%s matches=%d request_ref=%s",
             user_id,
             result.get("intent", "unknown"),
             len(result.get("matches", [])),
-            error_ref,
+            request_ref,
         )
 
         # Strip internal diagnostics from unauthenticated responses
@@ -563,16 +569,16 @@ def rico_chat_public(request: Request, payload: RicoPublicChatRequest) -> Public
         return response
     except Exception as exc:
         logger.exception(
-            "chat_public_error user=%s message_len=%d error=%s error_ref=%s",
+            "chat_public_error user=%s message_len=%d error=%s request_ref=%s",
             user_id if "user_id" in locals() else "unknown",
             len(payload.message) if "payload" in locals() else 0,
             str(exc),
-            error_ref,
+            request_ref,
         )
         _metrics.record_request((time.time() - start_time) * 1000)
         # Return a simple error for public users without exposing details
         return PublicChatResponse(
-            message=f"I couldn't process your request. Reference: {error_ref}. Please try again or rephrase your message.",
+            message=f"I couldn't process your request. Reference: {request_ref}. Please try again or rephrase your message.",
             type="error",
             matches=None,
             options=None,
@@ -773,7 +779,7 @@ async def rico_upload_cv(
 ) -> dict[str, Any]:
     """Upload and parse CV file (PDF only)."""
     start_time = time.time()
-    error_ref = generate_error_ref()
+    request_ref = generate_error_ref()
     resolved_user_id = _resolve_upload_user_id(request, user_id, form_user_id)
 
     try:
@@ -790,14 +796,14 @@ async def rico_upload_cv(
 
         # Log CV upload details for debugging
         logger.info(
-            "cv_upload user=%s filename=%s doc_type=%s quality=%s chars=%d skills=%d error_ref=%s",
+            "cv_upload user=%s filename=%s doc_type=%s quality=%s chars=%d skills=%d request_ref=%s",
             resolved_user_id,
             safe_name,
             "unknown",  # Will be updated after detection
             parsed.get("extraction_quality", "unknown"),
             parsed.get("extracted_chars", 0),
             len(parsed.get("skills", [])),
-            error_ref,
+            request_ref,
         )
 
         # Detect document type to prevent company profiles from being treated as CVs
@@ -806,24 +812,24 @@ async def rico_upload_cv(
 
         # Update log with detected document type
         logger.info(
-            "cv_upload_detected user=%s filename=%s doc_type=%s quality=%s chars=%d skills=%d error_ref=%s",
+            "cv_upload_detected user=%s filename=%s doc_type=%s quality=%s chars=%d skills=%d request_ref=%s",
             resolved_user_id,
             safe_name,
             doc_type,
             parsed.get("extraction_quality", "unknown"),
             parsed.get("extracted_chars", 0),
             len(parsed.get("skills", [])),
-            error_ref,
+            request_ref,
         )
 
         if doc_type != "cv":
             _metrics.record_request((time.time() - start_time) * 1000)
             logger.warning(
-                "cv_upload_rejected user=%s filename=%s doc_type=%s reason=not_cv error_ref=%s",
+                "cv_upload_rejected user=%s filename=%s doc_type=%s reason=not_cv request_ref=%s",
                 resolved_user_id,
                 safe_name,
                 doc_type,
-                error_ref,
+                request_ref,
             )
             return {
                 "ok": False,
@@ -845,7 +851,8 @@ async def rico_upload_cv(
         cv_text = parsed.get("text", "")
         target_roles = _extract_roles_from_cv_text(cv_text)
 
-        # Build preview data
+        # Build preview data with trust controls - separate detected from existing
+        detected_skills = parsed.get("skills", []) if parsed.get("skills") else []
         preview = {
             "name": None,  # CV parser doesn't extract name yet
             "email": parsed.get("emails", [None])[0] if parsed.get("emails") else None,
@@ -853,18 +860,20 @@ async def rico_upload_cv(
             "current_role": None,  # CV parser doesn't extract current role yet
             "experience_years": parsed.get("years_experience_hint"),
             "target_roles": target_roles if target_roles else [],
-            "skills": parsed.get("skills", []) if parsed.get("skills") else existing_skills,
+            "skills_detected": detected_skills,
+            "existing_skills": existing_skills,
+            "skills": detected_skills if detected_skills else existing_skills,  # For backward compatibility
             "certifications": parsed.get("certifications", []),
             "languages": parsed.get("languages", []),
         }
 
         _metrics.record_request((time.time() - start_time) * 1000)
         logger.info(
-            "cv_upload_preview user=%s filename=%s quality=%s preview_ready error_ref=%s",
+            "cv_upload_preview user=%s filename=%s quality=%s preview_ready request_ref=%s",
             resolved_user_id,
             safe_name,
             parsed.get("extraction_quality", "unknown"),
-            error_ref,
+            request_ref,
         )
 
         return {
@@ -880,41 +889,46 @@ async def rico_upload_cv(
         }
     except Exception as exc:
         logger.exception(
-            "cv_upload_error user=%s filename=%s error=%s error_ref=%s",
+            "cv_upload_error user=%s filename=%s error=%s request_ref=%s",
             resolved_user_id,
             safe_name if "safe_name" in locals() else "unknown",
             str(exc),
-            error_ref,
+            request_ref,
         )
         _metrics.record_request((time.time() - start_time) * 1000)
         raise HTTPException(
             status_code=500,
-            detail=f"CV upload failed. Reference: {error_ref}"
+            detail=f"CV upload failed. Reference: {request_ref}"
         )
 
 
 @router.post("/confirm-cv-profile")
 @limiter.limit(LIMIT_UPLOAD)
-async def confirm_cv_profile(request: Request, body: ConfirmCVProfileRequest) -> dict[str, Any]:
-    """Confirm and save CV profile preview to permanent profile."""
+async def confirm_cv_profile(
+    request: Request,
+    body: ConfirmCVProfileRequest,
+    user_id: str | None = None,
+    form_user_id: str | None = Form(None, alias="user_id"),
+) -> dict[str, Any]:
+    """Confirm and save CV profile preview to permanent profile. Supports both authenticated and public sessions."""
     start_time = time.time()
-    error_ref = generate_error_ref()
-    user = get_current_user(request)
-    user_id = user["email"]
+    request_ref = generate_error_ref()
+    resolved_user_id = _resolve_upload_user_id(request, user_id, form_user_id)
 
     try:
         logger.info(
-            "cv_profile_confirm user=%s filename=%s error_ref=%s",
-            user_id,
+            "cv_profile_confirm user=%s filename=%s request_ref=%s",
+            resolved_user_id,
             body.filename,
-            error_ref,
+            request_ref,
         )
 
-        # Build profile updates from preview
+        # Build profile updates from preview - use skills_detected if available, fallback to skills
+        preview_skills = body.preview.get("skills_detected") or body.preview.get("skills", [])
         profile_updates = {
             "email": body.preview.get("email"),
             "phone": body.preview.get("phone"),
-            "skills": body.preview.get("skills", []),
+            "skills": preview_skills,
             "years_experience": body.preview.get("experience_years"),
             "target_roles": body.preview.get("target_roles", []) if body.preview.get("target_roles") else None,
             "certifications": body.preview.get("certifications", []),
@@ -930,15 +944,18 @@ async def confirm_cv_profile(request: Request, body: ConfirmCVProfileRequest) ->
         profile_updates = {k: v for k, v in profile_updates.items() if v not in (None, [], {})}
 
         # Update permanent profile
-        upsert_profile(user_id=user_id, updates=profile_updates)
-        mark_onboarding_complete(user_id)
+        upsert_profile(user_id=resolved_user_id, updates=profile_updates)
+
+        # Only mark onboarding complete for authenticated users (not public sessions)
+        if not resolved_user_id.startswith("public:"):
+            mark_onboarding_complete(resolved_user_id)
 
         _metrics.record_request((time.time() - start_time) * 1000)
         logger.info(
-            "cv_profile_confirmed user=%s fields=%d error_ref=%s",
-            user_id,
+            "cv_profile_confirmed user=%s fields=%d request_ref=%s",
+            resolved_user_id,
             len(profile_updates),
-            error_ref,
+            request_ref,
         )
 
         return {
@@ -949,16 +966,16 @@ async def confirm_cv_profile(request: Request, body: ConfirmCVProfileRequest) ->
         }
     except Exception as exc:
         logger.exception(
-            "cv_profile_confirm_error user=%s filename=%s error=%s error_ref=%s",
-            user_id,
+            "cv_profile_confirm_error user=%s filename=%s error=%s request_ref=%s",
+            resolved_user_id,
             body.filename,
             str(exc),
-            error_ref,
+            request_ref,
         )
         _metrics.record_request((time.time() - start_time) * 1000)
         raise HTTPException(
             status_code=500,
-            detail=f"Profile confirmation failed. Reference: {error_ref}"
+            detail=f"Profile confirmation failed. Reference: {request_ref}"
         )
 
 

@@ -223,6 +223,7 @@ class RicoSystem:
         """Run Rico's autonomous workflow for a single profile with decision engine integration."""
         started_at = datetime.now(_UTC).isoformat()
         limit = limit or self.config.max_matches
+        search_status = "completed"  # Explicit status variable for logging
 
         # Generate deterministic search ID based on profile parameters
         import hashlib
@@ -245,6 +246,7 @@ class RicoSystem:
                 "job_search_blocked user=%s reason=no_target_roles",
                 profile.user_id,
             )
+            search_status = "blocked"
             return {
                 "status": "blocked",
                 "error": "Target role is required before job search",
@@ -252,6 +254,7 @@ class RicoSystem:
                 "matches": [],
             }
 
+        final_matches = []
         try:
             # Fetch and score jobs
             jobs = self.repo.fetch_jobs()
@@ -317,46 +320,26 @@ class RicoSystem:
                         try:
                             repo.record_signal(
                                 canonical_user_id=profile.user_id,
-                                signal_type="role_preference",
-                                signal_value=job.get("title", ""),
-                                signal_weight=0.5,  # Moderate weight for saved matches
+                                signal_type="job_search_result",
+                                signal_value="job_shown",
+                                signal_weight=0.1,
                                 source="rico_adapter",
                                 metadata={
+                                    "job_id": job.get("id"),
+                                    "title": job.get("title"),
                                     "company": job.get("company"),
-                                    "location": job.get("location"),
-                                    "repo_score": score,
-                                    "success_probability": job.get("success_probability"),
+                                    "score": score,
+                                    "search_id": search_id,
                                 }
                             )
                         except Exception as e:
-                            logger.warning(f"learning_signal_record_failed: {e}")
+                            logger.warning(f"learning_repo_signal_failed: {e}")
 
                     logger.info("adapter_learning_signals_recorded", extra={"count": len(enriched)})
                 except Exception as e:
                     logger.warning(f"learning_repo_unavailable: {e}")
 
-            # Agent recommendations
-            rico_recommendations = self.agent.recommend_jobs(
-                profile=profile,
-                jobs=[job for job, _ in enriched],
-            )
-
-            # Preserve existing pipeline scores alongside Rico explanations
-            by_identity = {
-                (str(job.get("title", "")), str(job.get("company", ""))): score
-                for job, score in enriched
-            }
-            final_matches: List[Tuple[Dict[str, Any], int]] = []
-            for recommendation in rico_recommendations:
-                job = recommendation["job"]
-                job["rico_score"] = recommendation["score"]
-                job["rico_explanation"] = recommendation["explanation"]
-                repo_score = by_identity.get((str(job.get("title", "")), str(job.get("company", ""))), recommendation["score"])
-                final_matches.append((job, int(repo_score)))
-
-            self.repo.notify_telegram(final_matches)
-            self.repo.track_ai_decisions(final_matches)
-
+            final_matches = enriched
             completed_at = datetime.now(_UTC).isoformat()
 
             return {
@@ -388,6 +371,7 @@ class RicoSystem:
                 },
             }
         except Exception as exc:
+            search_status = "error"
             logger.exception("run_for_profile_failed user=%s target_roles=%s error=%s", profile.user_id, profile.target_roles, str(exc))
             return {
                 "status": "error",
@@ -396,10 +380,11 @@ class RicoSystem:
             }
         finally:
             logger.info(
-                "job_search_complete user=%s status=%s matches=%d",
+                "job_search_complete user=%s status=%s matches=%d search_id=%s",
                 profile.user_id,
-                "completed" if "final_matches" in locals() else "error",
-                len(final_matches) if "final_matches" in locals() else 0,
+                search_status,
+                len(final_matches),
+                search_id,
             )
 
 

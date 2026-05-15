@@ -497,7 +497,10 @@ export default function ChatPage() {
     setOperationState({ state: "confirming", message: "Saving profile..." });
     try {
       const PROXY = "/proxy";
-      const res = await fetch(`${PROXY}/api/v1/rico/confirm-cv-profile`, {
+      const userId = `public:${getSessionId(sessionIdRef)}`;
+      const url = new URL(`${PROXY}/api/v1/rico/confirm-cv-profile`);
+      url.searchParams.set("user_id", userId);
+      const res = await fetch(url.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
