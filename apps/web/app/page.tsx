@@ -167,7 +167,6 @@ export default function HomePage() {
   return (
     <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", background: bg, color: ink }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap');
         @keyframes fadeUp { from { opacity:0; transform:translateY(18px) } to { opacity:1; transform:translateY(0) } }
         @keyframes float  { 0%,100% { transform:translateY(0) } 50% { transform:translateY(-7px) } }
         @keyframes pulse  { 0%,100% { opacity:1 } 50% { opacity:.35 } }
