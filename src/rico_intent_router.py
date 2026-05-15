@@ -113,7 +113,7 @@ _EXPLAIN_PATTERNS = re.compile(
 )
 _PREFS_PATTERNS = re.compile(
     r"\b(update|change|set|modify|adjust)\b.{0,40}"
-    r"\b(salary|city|location|preference|role|title|industry|experience|notice)\b"
+    r"\b(salary|city|location|preference|role|title|industry|experience|notice|telegram)\b"
     r"|\b(i (want|prefer|need|am looking for)|my (preference|target|goal) is)\b",
     re.IGNORECASE,
 )

@@ -148,7 +148,7 @@ _CV_UPLOAD_RE = re.compile(
 
 _PROFILE_UPDATE_RE = re.compile(
     r"\b(update|change|set|modify|adjust)\b.{0,40}"
-    r"\b(salary|city|location|preference|role|title|industry|experience|notice|email|phone)\b",
+    r"\b(salary|city|location|preference|role|title|industry|experience|notice|email|phone|telegram)\b",
     re.IGNORECASE,
 )
 
