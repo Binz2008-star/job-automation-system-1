@@ -149,12 +149,13 @@ export default function OnboardingPage() {
     setErrorMsg("");
     try {
       const res = await uploadCV(file);
-      setParsed(res.parsed);
+      setParsed(res.parsed ?? null);
       // Pre-fill skills from CV extraction
-      if (res.parsed.skills.length > 0) {
+      const skills = res.parsed?.skills ?? [];
+      if (skills.length > 0) {
         setFieldValues((prev) => ({
           ...prev,
-          skills: res.parsed.skills.join(", "),
+          skills: skills.join(", "),
         }));
       }
       setPageState("form");
@@ -297,19 +298,19 @@ export default function OnboardingPage() {
                       <span className="text-[#5a5a7a]">Experience: </span>{parsed.years_experience_hint} yrs
                     </p>
                   )}
-                  {parsed.skills.length > 0 && (
+                  {(parsed.skills?.length ?? 0) > 0 && (
                     <p className="text-sm text-[#8080a0]">
-                      <span className="text-[#5a5a7a]">Skills: </span>{parsed.skills.slice(0, 8).join(", ")}
+                      <span className="text-[#5a5a7a]">Skills: </span>{(parsed.skills ?? []).slice(0, 8).join(", ")}
                     </p>
                   )}
-                  {parsed.certifications.length > 0 && (
+                  {(parsed.certifications?.length ?? 0) > 0 && (
                     <p className="text-sm text-[#8080a0]">
-                      <span className="text-[#5a5a7a]">Certs: </span>{parsed.certifications.join(", ")}
+                      <span className="text-[#5a5a7a]">Certs: </span>{(parsed.certifications ?? []).join(", ")}
                     </p>
                   )}
-                  {parsed.languages.length > 0 && (
+                  {(parsed.languages?.length ?? 0) > 0 && (
                     <p className="text-sm text-[#8080a0]">
-                      <span className="text-[#5a5a7a]">Languages: </span>{parsed.languages.join(", ")}
+                      <span className="text-[#5a5a7a]">Languages: </span>{(parsed.languages ?? []).join(", ")}
                     </p>
                   )}
                 </div>

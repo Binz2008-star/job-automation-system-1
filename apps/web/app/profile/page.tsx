@@ -143,7 +143,7 @@ function ProfileDetail({ profile }: { profile: ProfileResponse }) {
       <StatusCard title="Skills" badge={hasSkills ? "live" : "pending"}>
         {hasSkills ? (
           <div className="flex flex-wrap gap-1.5">
-            {profile.skills!.map((s) => <Tag key={s} label={s} />)}
+            {(profile.skills ?? []).map((s) => <Tag key={s} label={s} />)}
             <ChatEditCTA prompt="Update my skills" />
           </div>
         ) : (
