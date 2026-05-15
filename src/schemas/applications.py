@@ -13,6 +13,16 @@ class ApplicationListResponse(BaseModel):
     pages: int
 
 
+class ApplicationCreateRequest(BaseModel):
+    job_id: str = Field(..., min_length=1)
+    title: str = Field(..., min_length=1)
+    company: str = Field(..., min_length=1)
+    location: str = ""
+    url: str = ""
+    status: str = Field(default="opened")
+    source: str = Field(default="manual")
+
+
 class StatusUpdateRequest(BaseModel):
     status: str = Field(..., min_length=1)
     notes: Optional[str] = None

@@ -19,6 +19,7 @@ from fastapi import HTTPException
 from src.applications import (
     get_applied_jobs as _get_applied,
     get_application_stats as _get_stats,
+    mark_applied as _mark_applied,
     update_application_status as _update_status,
 )
 
@@ -134,6 +135,47 @@ def find_by_job_id(job_id: str, user_id: Optional[str] = None) -> Optional[Dict[
         ),
         None,
     )
+
+
+def create(
+    job_id: str,
+    title: str,
+    company: str,
+    location: str = "",
+    url: str = "",
+    status: str = "opened",
+    source: str = "manual",
+    user_id: Optional[str] = None,
+) -> bool:
+    """Create a new application record."""
+    if user_id:
+        db = _db()
+        if not db:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+        db_user_id = _provision_db_user_id(db, user_id)
+
+        # Create job dict for mark_applied
+        job = {
+            "job_id": job_id,
+            "title": title,
+            "company": company,
+            "location": location,
+            "link": url,
+        }
+
+        # Use mark_applied which handles both DB and legacy
+        return _mark_applied(job, status=status, user_id=user_id)
+
+    # Legacy fallback
+    _warn_legacy_fallback("create")
+    job = {
+        "job_id": job_id,
+        "title": title,
+        "company": company,
+        "location": location,
+        "link": url,
+    }
+    return _mark_applied(job, status=status)
 
 
 def update_status(

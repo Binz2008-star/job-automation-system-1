@@ -11,14 +11,46 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.deps import get_current_user_id
 from src.applications import VALID_STATUSES
-from src.repositories.applications_repo import find_by_job_id, get_all, get_stats, update_status
+from src.repositories.applications_repo import create, find_by_job_id, get_all, get_stats, update_status
 from src.schemas.applications import (
+    ApplicationCreateRequest,
     ApplicationListResponse,
     StatusUpdateRequest,
     StatusUpdateResponse,
 )
 
 router = APIRouter(prefix="/api/v1/applications", tags=["applications"])
+
+
+@router.post("", response_model=StatusUpdateResponse)
+def create_application(
+    req: ApplicationCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> StatusUpdateResponse:
+    if req.status not in VALID_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid status {req.status!r}. Valid: {sorted(VALID_STATUSES)}",
+        )
+
+    ok = create(
+        job_id=req.job_id,
+        title=req.title,
+        company=req.company,
+        location=req.location,
+        url=req.url,
+        status=req.status,
+        source=req.source,
+        user_id=user_id,
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to create application record")
+
+    return StatusUpdateResponse(
+        status=req.status,
+        job_id=req.job_id,
+        message="Application record created",
+    )
 
 
 @router.get("", response_model=ApplicationListResponse)
