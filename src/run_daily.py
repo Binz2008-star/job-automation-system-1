@@ -174,8 +174,8 @@ def distributed_lock(lock_key: str, timeout: int = 3600):
             # Atomic unlock with Lua script to prevent race conditions
             r.eval(_UNLOCK_SCRIPT, 1, lock_key, lock_id)
     except Exception as e:
-        logger.error(f"lock_error: {e}")
-        yield True  # Fail open
+        logger.warning(f"redis_lock_unavailable_using_local_execution: {e}")
+        yield True
 
 
 def retryable(max_retries: int = 3, delay: int = 5, retry_exceptions: Tuple[Exception, ...] = (TimeoutError, ConnectionError)):
@@ -639,7 +639,7 @@ def run_pipeline() -> int:
         _init_metrics()
         _init_db()
         orchestrator = _build_orchestrator()
-        decision_engine = orchestrator.decision_engine if orchestrator else None
+        decision_engine = getattr(orchestrator, "decision_engine", None) if orchestrator else None
 
         try:
             all_scored, matches, stats = _fetch_and_score()
