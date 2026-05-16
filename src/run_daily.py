@@ -620,7 +620,7 @@ def _regenerate_dashboard(
         else:
             insights = None
 
-        html = build_dashboard(orchestrator=orchestrator, ai_insights=insights)
+        html = build_dashboard(orchestrator=orchestrator)
         DASHBOARD_FILE.write_text(html, encoding="utf-8")
         logger.info(f"dashboard_written path={DASHBOARD_FILE}", extra={"path": str(DASHBOARD_FILE)})
     except Exception as e:
