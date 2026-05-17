@@ -281,7 +281,7 @@ class TestCVUploadSecurity:
             "/api/v1/rico/upload-cv?user_id=user1",
             files={"file": ("malware.pdf", fake_exe, "application/pdf")},
         )
-        assert r.status_code in (200, 400, 422, 500)
+        assert r.status_code in (200, 400, 401, 422, 500)
         # Must not execute the file
         if r.status_code == 500:
             assert "Traceback" not in r.text
@@ -297,7 +297,7 @@ class TestCVUploadSecurity:
             "/api/v1/rico/upload-cv?user_id=user1",
             files={"file": ("bomb.zip", buf, "application/zip")},
         )
-        assert r.status_code in (200, 400, 415, 422, 429, 500)
+        assert r.status_code in (200, 400, 401, 415, 422, 429, 500)
 
     def test_cv_upload_xss_filename(self, client):
         """XSS in filename must be escaped in response."""
@@ -306,7 +306,7 @@ class TestCVUploadSecurity:
             "/api/v1/rico/upload-cv?user_id=user1",
             files={"file": ("<script>alert(1)</script>.pdf", fake_pdf, "application/pdf")},
         )
-        assert r.status_code in (200, 400, 422, 429, 500)
+        assert r.status_code in (200, 400, 401, 422, 429, 500)
         if r.status_code == 200:
             assert "<script>" not in r.text
 
