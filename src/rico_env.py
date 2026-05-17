@@ -28,6 +28,9 @@ class RicoEnvReport:
     ready_for_api: bool
     ready_for_db: bool
     ready_for_telegram: bool
+    openai_key_present: bool
+    deepseek_key_present: bool
+    hf_key_present: bool
     ready_for_openai: bool
     ready_for_deepseek: bool
     ready_for_jotform: bool
@@ -41,6 +44,9 @@ class RicoEnvReport:
             "ready_for_api": self.ready_for_api,
             "ready_for_db": self.ready_for_db,
             "ready_for_telegram": self.ready_for_telegram,
+            "openai_key_present": self.openai_key_present,
+            "deepseek_key_present": self.deepseek_key_present,
+            "hf_key_present": self.hf_key_present,
             "ready_for_openai": self.ready_for_openai,
             "ready_for_deepseek": self.ready_for_deepseek,
             "ready_for_jotform": self.ready_for_jotform,
@@ -159,6 +165,9 @@ def get_rico_env_report() -> RicoEnvReport:
         ready_for_api=True,
         ready_for_db=present.get("DATABASE_URL", False),
         ready_for_telegram=present.get("TELEGRAM_BOT_TOKEN", False),
+        openai_key_present=openai_key_present,
+        deepseek_key_present=deepseek_key_present,
+        hf_key_present=hf_key_present,
         ready_for_openai=ready_for_openai,
         ready_for_deepseek=ready_for_deepseek,
         ready_for_jotform=ready_for_jotform,

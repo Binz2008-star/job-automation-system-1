@@ -11,7 +11,9 @@ Follow-up intent routing (issue #133) is covered by tests/test_follow_up_intent.
 
 import os
 import pytest
+from fastapi.testclient import TestClient
 
+from src.api.app import app
 from src.rico_env import get_rico_env_report, get_ai_provider
 from src.rico_openai_agent import RicoOpenAIAgent
 from src.rico_hf_client import is_available
@@ -26,6 +28,9 @@ class TestAIProviderHealthEndpoint:
         report = get_rico_env_report()
 
         # Verify all required fields exist
+        assert hasattr(report, "openai_key_present")
+        assert hasattr(report, "deepseek_key_present")
+        assert hasattr(report, "hf_key_present")
         assert hasattr(report, "ready_for_deepseek")
         assert hasattr(report, "ready_for_hf")
         assert hasattr(report, "hf_available")
@@ -35,12 +40,31 @@ class TestAIProviderHealthEndpoint:
 
         # Verify to_dict works
         report_dict = report.to_dict()
+        assert "openai_key_present" in report_dict
+        assert "deepseek_key_present" in report_dict
+        assert "hf_key_present" in report_dict
         assert "ready_for_deepseek" in report_dict
         assert "ready_for_hf" in report_dict
         assert "hf_available" in report_dict
         assert "ready_for_jotform" in report_dict
         assert "ai_provider" in report_dict
         assert "ready_for_openai" in report_dict
+
+    def test_health_http_response_exposes_key_presence_fields(self):
+        """The public /health payload should surface key presence separately."""
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get("/health")
+        assert response.status_code == 200
+
+        payload = response.json()
+        assert "openai_key_present" in payload
+        assert "deepseek_key_present" in payload
+        assert "hf_key_present" in payload
+        assert "rico" in payload
+        assert "openai_key_present" in payload["rico"]
+        assert "deepseek_key_present" in payload["rico"]
+        assert "hf_key_present" in payload["rico"]
 
     def test_deepseek_readiness_detection(self):
         """DeepSeek readiness should be detected when DEEPSEEK_API_KEY is set."""
@@ -56,6 +80,7 @@ class TestAIProviderHealthEndpoint:
             provider = get_ai_provider()
 
             assert provider == "deepseek"
+            assert report.deepseek_key_present == True
             assert report.ready_for_deepseek == True
 
         finally:
@@ -81,6 +106,7 @@ class TestAIProviderHealthEndpoint:
             provider = get_ai_provider()
 
             assert provider == "huggingface"
+            assert report.hf_key_present == True
             assert report.ready_for_hf == True
             assert report.hf_available == True
 
@@ -101,17 +127,24 @@ class TestAIProviderHealthEndpoint:
         original_hf = os.getenv("HF_API_TOKEN")
         original_provider = os.getenv("RICO_AI_PROVIDER")
         original_deepseek = os.getenv("DEEPSEEK_API_KEY")
+        original_openai = os.getenv("OPENAI_API_KEY")
+        original_openai_legacy = os.getenv("OPEN_AI_API")
 
         try:
             # Test with DeepSeek as active provider but HF key present
             os.environ["DEEPSEEK_API_KEY"] = "test_deepseek"
             os.environ["HF_API_TOKEN"] = "test_hf_key"
             os.environ["RICO_AI_PROVIDER"] = "deepseek"
+            os.environ.pop("OPENAI_API_KEY", None)
+            os.environ.pop("OPEN_AI_API", None)
 
             report = get_rico_env_report()
             provider = get_ai_provider()
 
             assert provider == "deepseek"
+            assert report.deepseek_key_present == True
+            assert report.hf_key_present == True
+            assert report.openai_key_present == False
             assert report.ready_for_deepseek == True
             assert report.ready_for_hf == False  # HF is not the active provider
             assert report.hf_available == True  # HF key is present for fallback
@@ -130,6 +163,47 @@ class TestAIProviderHealthEndpoint:
                 os.environ.pop("DEEPSEEK_API_KEY", None)
             else:
                 os.environ["DEEPSEEK_API_KEY"] = original_deepseek
+            if original_openai is None:
+                os.environ.pop("OPENAI_API_KEY", None)
+            else:
+                os.environ["OPENAI_API_KEY"] = original_openai
+            if original_openai_legacy is None:
+                os.environ.pop("OPEN_AI_API", None)
+            else:
+                os.environ["OPEN_AI_API"] = original_openai_legacy
+
+    def test_key_presence_fields_are_independent_of_selected_provider(self):
+        """Key presence fields should report config regardless of active provider."""
+        original_env = {
+            "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+            "OPEN_AI_API": os.getenv("OPEN_AI_API"),
+            "DEEPSEEK_API_KEY": os.getenv("DEEPSEEK_API_KEY"),
+            "HF_API_TOKEN": os.getenv("HF_API_TOKEN"),
+            "RICO_AI_PROVIDER": os.getenv("RICO_AI_PROVIDER"),
+        }
+
+        try:
+            os.environ["OPENAI_API_KEY"] = "test_openai_key"
+            os.environ["DEEPSEEK_API_KEY"] = "test_deepseek_key"
+            os.environ["HF_API_TOKEN"] = "test_hf_key"
+            os.environ["RICO_AI_PROVIDER"] = "deepseek"
+
+            report = get_rico_env_report()
+
+            assert report.openai_key_present == True
+            assert report.deepseek_key_present == True
+            assert report.hf_key_present == True
+            assert report.ready_for_openai == False
+            assert report.ready_for_deepseek == True
+            assert report.ready_for_hf == False
+            assert report.hf_available == True
+
+        finally:
+            for key, value in original_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
 
     def test_jotform_readiness_detection(self):
         """Jotform readiness should be detected when form ID is set."""
