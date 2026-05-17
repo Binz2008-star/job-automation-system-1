@@ -108,6 +108,12 @@ class TestFollowUpIntentRegression:
         result = classify_intent("CONTINUE")
         assert result.intent == "follow_up_confirmation"
 
+    def test_follow_up_with_trailing_punctuation(self):
+        """Trailing punctuation should not break follow-up intent classification."""
+        assert classify_intent("both please.").intent == "follow_up_confirmation"
+        assert classify_intent("keep all!").intent == "follow_up_confirmation"
+        assert classify_intent("continue?").intent == "follow_up_confirmation"
+
 
 class TestFollowUpPhraseHandling:
     """Test deterministic follow-up phrase handling in RicoChatAPI."""

@@ -7,6 +7,7 @@ triggers workflows, and responds with autonomous actions.
 
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
 import json
 import logging
 import os
@@ -48,6 +49,7 @@ CV_FILE_RE = re.compile(r"\b[\w .()_-]+\.(?:pdf|docx?|txt)\b", re.IGNORECASE)
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 PHONE_RE = re.compile(r"(?:\+?\d[\d\s().-]{7,}\d)")
 BARE_ROLE_RE = re.compile(r"^[A-Za-z][A-Za-z\s/&+-]{2,80}$", re.IGNORECASE)
+FOLLOWUP_BOUNDARY_PUNCT_RE = re.compile(r"^[\s\"'([{]+|[\s\"')\]}.,!?;:]+$")
 
 
 def generate_error_ref() -> str:
@@ -243,8 +245,14 @@ class RicoChatAPI:
     @staticmethod
     def _looks_like_next_step_followup(message: str) -> bool:
         """True for short post-confirmation follow-ups like 'so?' or 'what now?'."""
-        text = (message or "").strip().lower()
+        text = RicoChatAPI._normalize_followup_phrase(message)
         return text in RicoChatAPI._FOLLOWUP_NEXT_STEP_PHRASES
+
+    @staticmethod
+    def _normalize_followup_phrase(message: str) -> str:
+        """Normalize short follow-up text so punctuation does not break fast paths."""
+        text = re.sub(r"\s+", " ", (message or "").strip().lower())
+        return FOLLOWUP_BOUNDARY_PUNCT_RE.sub("", text)
 
     def _handle_next_step_options(self, user_id: str, profile: Any) -> dict[str, Any]:
         """Return instant options after role confirmation — no AI, no pipeline."""
@@ -884,7 +892,7 @@ class RicoChatAPI:
         """
         profile = self._resolve_profile(user_id)
         has_cv = profile.has_cv
-        text = (message or "").strip().lower()
+        text = self._normalize_followup_phrase(message)
 
         # ── Deterministic follow-up phrases (must be before role classification) ──
         if text in self._FOLLOWUP_KEEP_ALL_PHRASES:
@@ -1008,6 +1016,30 @@ class RicoChatAPI:
                 self.SOURCE_KEYWORD,
                 profile=profile,
             )
+
+        # Generic follow-up confirmations should never fall into role classification.
+        if intent == "follow_up_confirmation":
+            if text == "all":
+                return self._finalize(
+                    self._handle_keep_all_target_roles(user_id, profile),
+                    self.SOURCE_KEYWORD,
+                    profile=profile,
+                )
+            if has_cv:
+                return self._finalize(
+                    self._handle_next_step_options(user_id, profile),
+                    self.SOURCE_KEYWORD,
+                    profile=profile,
+                )
+            response = {
+                "type": "clarification",
+                "message": (
+                    "I am ready to continue. Upload your CV or tell me your target role "
+                    "so I know what action to take next."
+                ),
+            }
+            self._append_chat(user_id, "assistant", response["message"])
+            return self._finalize(response, self.SOURCE_KEYWORD, profile=profile)
 
         # Application tracking — route to applications repo, NOT job search
         if intent == "application_tracking":

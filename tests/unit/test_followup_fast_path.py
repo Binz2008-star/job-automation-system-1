@@ -158,6 +158,37 @@ class TestFollowupFastPathRouting:
         # (may be clarification or onboarding depending on intent classifier)
         assert result["type"] != "options" or True  # non-crashing is the key requirement
 
+    def test_both_returns_combined_action_plan(self, monkeypatch):
+        api, result = _run(monkeypatch, "both", _CVProfile())
+        assert result["type"] == "combined_action_plan"
+
+    def test_both_please_returns_combined_action_plan(self, monkeypatch):
+        api, result = _run(monkeypatch, "both please", _CVProfile())
+        assert result["type"] == "combined_action_plan"
+        assert "I do not recognize" not in result["message"]
+
+    def test_both_please_with_punctuation_returns_combined_action_plan(self, monkeypatch):
+        api, result = _run(monkeypatch, "both please.", _CVProfile())
+        assert result["type"] == "combined_action_plan"
+
+    def test_keep_all_returns_target_roles_confirmed(self, monkeypatch):
+        api, result = _run(monkeypatch, "keep all", _CVProfile())
+        assert result["type"] == "target_roles_confirmed"
+        assert "keep all current target roles" in result["message"]
+
+    def test_keep_all_with_punctuation_returns_target_roles_confirmed(self, monkeypatch):
+        api, result = _run(monkeypatch, "keep all!", _CVProfile())
+        assert result["type"] == "target_roles_confirmed"
+
+    def test_continue_with_punctuation_returns_options(self, monkeypatch):
+        api, result = _run(monkeypatch, "continue.", _CVProfile())
+        assert result["type"] == "options"
+
+    def test_yes_with_cv_returns_options_not_role_error(self, monkeypatch):
+        api, result = _run(monkeypatch, "yes", _CVProfile())
+        assert result["type"] == "options"
+        assert "I do not recognize" not in result["message"]
+
 
 # ── Options shape ─────────────────────────────────────────────────────────────
 

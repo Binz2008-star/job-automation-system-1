@@ -197,6 +197,12 @@ _MIN_MEANINGFUL_LENGTH = 2
 _MAX_WORD_COUNT_FOR_ROLE = 6
 
 
+def _normalize_exact_phrase(text: str) -> str:
+    """Normalize short exact-match phrases so trailing punctuation does not alter intent."""
+    lowered = re.sub(r"\s+", " ", text.strip().lower())
+    return re.sub(r"^[\s\"'([{]+|[\s\"')\]}.,!?;:]+$", "", lowered)
+
+
 def classify_intent(message: str, *, has_cv_profile: bool = False) -> IntentResult:
     """Classify a user message into a canonical intent.
 
@@ -208,7 +214,7 @@ def classify_intent(message: str, *, has_cv_profile: bool = False) -> IntentResu
         IntentResult with intent name, confidence, and source.
     """
     text = (message or "").strip()
-    lower = text.lower()
+    lower = _normalize_exact_phrase(text)
 
     if not text or len(text) < _MIN_MEANINGFUL_LENGTH:
         return IntentResult("unknown", 0.0, "fallback")
