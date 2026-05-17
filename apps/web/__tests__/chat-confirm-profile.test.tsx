@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock("next/link", () => ({
   default: ({ children, href, ...props }: any) => (
     <a href={href} {...props}>
@@ -44,11 +47,12 @@ describe("handleConfirmProfile", () => {
       const url = String(input);
 
       if (url.includes("/api/v1/me")) {
-        return jsonResponse({ authenticated: false });
+        return jsonResponse({ authenticated: false, role: "guest", email: null, guest: true });
       }
 
       if (url.includes("/api/v1/rico/upload-cv")) {
         return jsonResponse({
+          ok: true,
           status: "preview_ready",
           preview: {
             name: "Test",
@@ -56,7 +60,12 @@ describe("handleConfirmProfile", () => {
             phone: "0501234567",
             current_role: "HSE Manager",
             experience_years: 5,
+            target_roles: [],
             skills_detected: ["hse"],
+            existing_skills: [],
+            skills: ["hse"],
+            certifications: [],
+            languages: [],
           },
           filename: "cv.pdf",
           extraction_quality: "good",
@@ -65,7 +74,7 @@ describe("handleConfirmProfile", () => {
       }
 
       if (url.includes("/api/v1/rico/confirm-cv-profile")) {
-        return jsonResponse({ status: "confirmed" });
+        return jsonResponse({ ok: true, status: "confirmed", message: "Profile confirmed", profile: {} });
       }
 
       throw new Error(`Unhandled fetch: ${url}`);
@@ -98,11 +107,12 @@ describe("Edit before saving", () => {
       const url = String(input);
 
       if (url.includes("/api/v1/me")) {
-        return jsonResponse({ authenticated: false });
+        return jsonResponse({ authenticated: false, role: "guest", email: null, guest: true });
       }
 
       if (url.includes("/api/v1/rico/upload-cv")) {
         return jsonResponse({
+          ok: true,
           status: "preview_ready",
           preview: {
             name: "Test",
@@ -110,7 +120,12 @@ describe("Edit before saving", () => {
             phone: "0501234567",
             current_role: null,
             experience_years: 3,
+            target_roles: [],
             skills_detected: ["safety"],
+            existing_skills: [],
+            skills: ["safety"],
+            certifications: [],
+            languages: [],
           },
           filename: "cv.pdf",
           extraction_quality: "good",
@@ -151,11 +166,12 @@ describe("Edit before saving", () => {
       const url = String(input);
 
       if (url.includes("/api/v1/me")) {
-        return jsonResponse({ authenticated: false });
+        return jsonResponse({ authenticated: false, role: "guest", email: null, guest: true });
       }
 
       if (url.includes("/api/v1/rico/upload-cv")) {
         return jsonResponse({
+          ok: true,
           status: "preview_ready",
           preview: {
             name: "",
@@ -163,7 +179,12 @@ describe("Edit before saving", () => {
             phone: "0501234567",
             current_role: "",
             experience_years: 3,
+            target_roles: [],
             skills_detected: ["safety"],
+            existing_skills: [],
+            skills: ["safety"],
+            certifications: [],
+            languages: [],
           },
           filename: "cv.pdf",
           extraction_quality: "good",
@@ -172,7 +193,7 @@ describe("Edit before saving", () => {
       }
 
       if (url.includes("/api/v1/rico/confirm-cv-profile")) {
-        return jsonResponse({ status: "confirmed" });
+        return jsonResponse({ ok: true, status: "confirmed", message: "Profile confirmed", profile: {} });
       }
 
       throw new Error(`Unhandled fetch: ${url}`);

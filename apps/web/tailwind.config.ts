@@ -88,10 +88,10 @@ const config: Config = {
                 "container-padding-desktop": "120px",
             },
             fontFamily: {
-                display: ["Sora", "sans-serif"],
-                headline: ["Sora", "sans-serif"],
-                body: ["Geist", "sans-serif"],
-                mono: ["Space Mono", "monospace"],
+                display: ["var(--font-sora)", "sans-serif"],
+                headline: ["var(--font-sora)", "sans-serif"],
+                body: ["var(--font-inter)", "sans-serif"],
+                mono: ["var(--font-space-mono)", "monospace"],
             },
             fontSize: {
                 "display-lg": ["80px", { lineHeight: "1.1", letterSpacing: "-0.04em", fontWeight: "700" }],

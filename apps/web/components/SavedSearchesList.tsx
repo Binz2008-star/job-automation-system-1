@@ -10,14 +10,14 @@ export function SavedSearchesList() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const handleDelete = async (id: number, query: string) => {
+  const handleDelete = async (id: string, query: string) => {
     if (!confirm(`Delete saved search: "${query}"?`)) {
       return;
     }
 
     setDeleteError(null);
     try {
-      await deleteSavedSearch(String(id));
+      await deleteSavedSearch(id);
       // Remove the deleted item from local state
       setSearches((current) => current.filter((s) => s.id !== id));
     } catch (err) {

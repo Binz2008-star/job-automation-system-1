@@ -2,14 +2,13 @@
 
 import { StatusCard } from "@/components/StatusCard";
 import { fetchProfile, type ProfileResponse } from "@/lib/api";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export function ProfileSummaryCard() {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
 
   const loadProfile = useCallback(async () => {
-    setStatus("loading");
     try {
       const data = await fetchProfile();
       setProfile(data);
@@ -21,13 +20,20 @@ export function ProfileSummaryCard() {
   }, []);
 
   useEffect(() => {
-    loadProfile();
+    const timeoutId = window.setTimeout(() => {
+      void loadProfile();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [loadProfile]);
 
-  const displayRoles = useMemo(() => {
-    if (!profile?.target_roles?.length) return null;
-    return profile.target_roles.slice(0, 3).join(", ");
-  }, [profile?.target_roles]);
+  const handleRetry = useCallback(() => {
+    setStatus("loading");
+    void loadProfile();
+  }, [loadProfile]);
+
+  const displayRoles = profile?.target_roles?.length
+    ? profile.target_roles.slice(0, 3).join(", ")
+    : null;
 
   if (status === "loading") {
     return (
@@ -45,7 +51,7 @@ export function ProfileSummaryCard() {
       <StatusCard title="Profile Summary" badge="error">
         <p className="text-sm text-[#5a5a7a] mb-2">Could not load profile.</p>
         <button
-          onClick={loadProfile}
+          onClick={handleRetry}
           className="text-xs text-[#a78bfa] underline hover:text-[#eeeef5] transition-colors"
         >
           Try again

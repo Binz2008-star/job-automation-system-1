@@ -50,22 +50,33 @@ export default function ApplicationsPage() {
   const [error, setError] = useState<"auth" | "other" | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
 
-  const fetchApps = useCallback(() => {
+  const fetchApps = useCallback(async () => {
     if (!user) return;
-    setLoading(true);
-    setError(null);
-    getApplications()
-      .then((r) => setApps(r.applications))
-      .catch((err) => {
-        const is401 = err instanceof ApiError && err.statusCode === 401;
-        setError(is401 ? "auth" : "other");
-        toast(is401 ? "Session expired — please log in again" : "Could not load applications", "error");
-      })
-      .finally(() => setLoading(false));
+    try {
+      const response = await getApplications();
+      setApps(response.applications);
+      setError(null);
+    } catch (err) {
+      const is401 = err instanceof ApiError && err.statusCode === 401;
+      setError(is401 ? "auth" : "other");
+      toast(is401 ? "Session expired — please log in again" : "Could not load applications", "error");
+    } finally {
+      setLoading(false);
+    }
   }, [user, toast]);
 
   useEffect(() => {
-    fetchApps();
+    if (!user) return;
+    const timeoutId = window.setTimeout(() => {
+      void fetchApps();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchApps, user]);
+
+  const handleRetry = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    void fetchApps();
   }, [fetchApps]);
 
   const changeStatus = async (app: Application, status: ApplicationStatus) => {
@@ -119,7 +130,7 @@ export default function ApplicationsPage() {
             <div className="p-6">
               <ErrorState
                 variant={error === "auth" ? "auth" : "network"}
-                onRetry={fetchApps}
+                onRetry={handleRetry}
               />
             </div>
           ) : apps.length === 0 ? (

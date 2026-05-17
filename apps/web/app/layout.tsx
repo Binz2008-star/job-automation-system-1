@@ -1,5 +1,25 @@
 import type { Metadata } from "next";
+import { Inter, Sora, Space_Mono } from "next/font/google";
 import "./globals.css";
+
+const inter = Inter({
+    subsets: ["latin"],
+    variable: "--font-inter",
+    display: "swap",
+});
+
+const sora = Sora({
+    subsets: ["latin"],
+    variable: "--font-sora",
+    display: "swap",
+});
+
+const spaceMono = Space_Mono({
+    subsets: ["latin"],
+    weight: ["400", "700"],
+    variable: "--font-space-mono",
+    display: "swap",
+});
 
 export const metadata: Metadata = {
     metadataBase: new URL(
@@ -26,19 +46,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
         <html lang="en" className="dark">
-            <head>
-                <link rel="preconnect" href="https://fonts.googleapis.com" />
-                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-                <link
-                    href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Geist:wght@300;400;500;600&family=Space+Mono:wght@400;500;600&display=swap"
-                    rel="stylesheet"
-                />
-                <link
-                    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-                    rel="stylesheet"
-                />
-            </head>
-            <body className="antialiased bg-background text-on-surface font-body overflow-x-hidden">
+            <body className={`${inter.variable} ${sora.variable} ${spaceMono.variable} antialiased bg-background text-on-surface font-body overflow-x-hidden`}>
                 {children}
             </body>
         </html>

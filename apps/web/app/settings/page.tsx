@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/useToast";
 import { ApiError, getHealth, getSettings, updateSettings } from "@/lib/api";
 import type { HealthResponse, SettingsResponse } from "@/types";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 function Row({ label, value, ok }: { label: string; value: string; ok?: boolean }) {
   return (
@@ -45,19 +45,34 @@ export default function SettingsPage() {
       .finally(() => setLoadingHealth(false));
   }, [toast]);
 
+  const loadSettings = useCallback(async () => {
+    if (!user) return;
+    try {
+      const response = await getSettings();
+      setSettings(response);
+      setError(null);
+    } catch (err) {
+      const is401 = err instanceof ApiError && err.statusCode === 401;
+      setError(is401 ? "auth" : "other");
+      toast(is401 ? "Session expired" : "Could not load settings", "error");
+    } finally {
+      setLoadingSettings(false);
+    }
+  }, [toast, user]);
+
   useEffect(() => {
     if (!user) return;
-    setLoadingSettings(true);
+    const timeoutId = window.setTimeout(() => {
+      void loadSettings();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [loadSettings, user]);
+
+  const handleRetrySettings = useCallback(() => {
     setError(null);
-    getSettings()
-      .then(setSettings)
-      .catch((err) => {
-        const is401 = err instanceof ApiError && err.statusCode === 401;
-        setError(is401 ? "auth" : "other");
-        toast(is401 ? "Session expired" : "Could not load settings", "error");
-      })
-      .finally(() => setLoadingSettings(false));
-  }, [user, toast]);
+    setLoadingSettings(true);
+    void loadSettings();
+  }, [loadSettings]);
 
   const handleSave = async () => {
     if (!settings) return;
@@ -146,7 +161,7 @@ export default function SettingsPage() {
           ) : error ? (
             <ErrorState
               variant={error === "auth" ? "auth" : "network"}
-              onRetry={() => { setError(null); setLoadingSettings(true); getSettings().then(setSettings).catch(() => setError("other")).finally(() => setLoadingSettings(false)); }}
+              onRetry={handleRetrySettings}
             />
           ) : settings ? (
             <div className="flex flex-col gap-4">

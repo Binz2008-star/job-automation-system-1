@@ -13,7 +13,7 @@ html,
 body {
     background: #000000;
     color: #e5e2e1;
-    font-family: 'Geist', system-ui, sans-serif;
+    font-family: var(--font-inter), system-ui, sans-serif;
     height: 100%;
     overflow-x: hidden;
 }
@@ -54,11 +54,6 @@ body>div:first-child {
 .glow-cyan-point {
     filter: blur(40px);
     background: rgba(0, 229, 255, 0.12);
-}
-
-/* Material symbols */
-.material-symbols-outlined {
-    font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
 }
 
 /* Scrollbar */
@@ -105,4 +100,15 @@ body::after {
     pointer-events: none;
     z-index: 9999;
     opacity: 0.04;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+    }
 }

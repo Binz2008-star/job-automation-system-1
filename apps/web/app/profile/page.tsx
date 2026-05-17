@@ -159,20 +159,30 @@ export default function ProfilePage() {
     const [error, setError] = useState<"auth" | "other" | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const loadProfile = useCallback(() => {
-        setError(null);
-        setLoading(true);
-        fetchProfile()
-            .then(setProfile)
-            .catch((err: unknown) => {
-                const is401 = err instanceof Error && err.message.includes("401");
-                setError(is401 ? "auth" : "other");
-            })
-            .finally(() => setLoading(false));
+    const loadProfile = useCallback(async () => {
+        try {
+            const data = await fetchProfile();
+            setProfile(data);
+            setError(null);
+        } catch (err: unknown) {
+            const is401 = err instanceof Error && err.message.includes("401");
+            setError(is401 ? "auth" : "other");
+        } finally {
+            setLoading(false);
+        }
     }, []);
 
     useEffect(() => {
-        loadProfile();
+        const timeoutId = window.setTimeout(() => {
+            void loadProfile();
+        }, 0);
+        return () => window.clearTimeout(timeoutId);
+    }, [loadProfile]);
+
+    const handleRetry = useCallback(() => {
+        setError(null);
+        setLoading(true);
+        void loadProfile();
     }, [loadProfile]);
 
     return (
@@ -183,7 +193,7 @@ export default function ProfilePage() {
                 {!loading && error && (
                     <ErrorState
                         variant={error === "auth" ? "auth" : "network"}
-                        onRetry={loadProfile}
+                        onRetry={handleRetry}
                     />
                 )}
 

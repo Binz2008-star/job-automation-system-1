@@ -12,9 +12,21 @@ import type {
     SettingsResponse,
     SettingsUpdateRequest,
 } from "@/types";
+import {
+    ConfirmCVProfileResponseSchema,
+    MeResponseSchema,
+    ProfileUpdateResponseSchema,
+    RicoChatHistoryResponseSchema,
+    RicoChatResponseSchema,
+    RicoProfileResponseSchema,
+    SavedSearchesResponseSchema,
+    UploadCVResponseSchema,
+} from "@/lib/schemas";
+import type { ZodType } from "zod";
 
 // Absolute backend URL — used only for server-side (SSR) fetches such as fetchHealth().
 const RICO_API =
+    process.env.BACKEND_API_BASE_URL ??
     process.env.NEXT_PUBLIC_API_BASE_URL ??
     process.env.NEXT_PUBLIC_RICO_API ??
     "http://localhost:8000";
@@ -35,6 +47,15 @@ export class ApiError extends Error {
         this.data = data;
         this.name = "ApiError";
     }
+}
+
+function validateShape<T>(schema: ZodType<T>, data: unknown, context: string): T {
+    const result = schema.safeParse(data);
+    if (!result.success) {
+        console.error(`Invalid ${context} response`, result.error.flatten());
+        throw new Error(`Invalid ${context} response`);
+    }
+    return result.data;
 }
 
 function buildProxyUrl(path: string, params?: Record<string, unknown>): string {
@@ -149,7 +170,7 @@ export async function fetchMe(signal?: AbortSignal): Promise<MeResponse> {
         signal,
     });
     if (!res.ok) throw new Error(`/me failed: ${res.status}`);
-    return res.json() as Promise<MeResponse>;
+    return validateShape(MeResponseSchema, await res.json(), "auth /me");
 }
 
 export interface LoginResponse {
@@ -207,6 +228,7 @@ export interface ProfileResponse {
     current_role?: string | null;
     current_company?: string | null;
     linkedin_url?: string | null;
+    completeness_score?: number | null;
     settings?: Record<string, unknown>;
 }
 
@@ -215,13 +237,13 @@ export async function fetchProfile(): Promise<ProfileResponse> {
         credentials: "include",
     });
     if (!res.ok) throw new Error(`Profile fetch failed: ${res.status}`);
-    return res.json() as Promise<ProfileResponse>;
+    return validateShape(RicoProfileResponseSchema, await res.json(), "Rico profile");
 }
 
 // ── Saved searches ────────────────────────────────────────────────────────────
 
 export interface SavedSearch {
-    id: number;
+    id: string;
     query: string;
     filters: Record<string, unknown>;
     created_at: string;
@@ -237,7 +259,7 @@ export async function fetchSavedSearches(): Promise<SavedSearchesResponse> {
         credentials: "include",
     });
     if (!res.ok) throw new Error(`Saved searches fetch failed: ${res.status}`);
-    return res.json() as Promise<SavedSearchesResponse>;
+    return validateShape(SavedSearchesResponseSchema, await res.json(), "saved searches");
 }
 
 export async function createSavedSearch(
@@ -652,15 +674,8 @@ export interface RicoOption {
 export interface NextAction {
     action: string;
     label: string;
-    message: string;
-    role: string;
-}
-
-export interface NextAction {
-    action: string;
-    label: string;
-    message: string;
-    role: string;
+    message?: string;
+    role?: string;
 }
 
 export interface ChatApiResponse {
@@ -743,21 +758,15 @@ export async function confirmCVProfile(
     payload: ConfirmCVProfileRequest,
     userId?: string
 ): Promise<ConfirmCVProfileResponse> {
-    const url = new URL(`${PROXY}/api/v1/rico/confirm-cv-profile`);
-    if (userId) {
-        url.searchParams.set("user_id", userId);
-    }
-    const res = await fetch(url.toString(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
-        throw new Error(extractDetail(body.detail, `Confirm profile failed: ${res.status}`));
-    }
-    return res.json() as Promise<ConfirmCVProfileResponse>;
+    const data = await requestJson<unknown>(
+        "/api/v1/rico/confirm-cv-profile",
+        {
+            method: "POST",
+            body: JSON.stringify(payload),
+        },
+        userId ? { user_id: userId } : undefined
+    );
+    return validateShape(ConfirmCVProfileResponseSchema, data, "confirm CV profile");
 }
 
 function extractDetail(detail: unknown, fallback: string): string {
@@ -775,16 +784,16 @@ export async function uploadCV(
 ): Promise<UploadCVResponse> {
     const form = new FormData();
     form.append("file", file);
-    const res = await fetch(buildProxyUrl("/api/v1/rico/upload-cv", userId ? { user_id: userId } : undefined), {
-        method: "POST",
-        credentials: "include",
-        body: form,
-    });
-    if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
-        throw new Error(extractDetail(body.detail, `Upload failed: ${res.status}`));
-    }
-    return res.json() as Promise<UploadCVResponse>;
+    const data = await requestJson<unknown>(
+        "/api/v1/rico/upload-cv",
+        {
+            method: "POST",
+            credentials: "include",
+            body: form,
+        },
+        userId ? { user_id: userId } : undefined
+    );
+    return validateShape(UploadCVResponseSchema, data, "CV upload");
 }
 
 // ── Onboarding ────────────────────────────────────────────────────────────────
@@ -878,17 +887,11 @@ export interface ProfileUpdatePayload {
 export async function updateProfile(
     payload: ProfileUpdatePayload
 ): Promise<{ status: string; updated_fields: string[] }> {
-    const res = await fetch(`${PROXY}/api/v1/rico/profile`, {
+    const data = await requestJson<unknown>("/api/v1/rico/profile", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify(payload),
     });
-    if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
-        throw new Error(extractDetail(body.detail, `Profile update failed: ${res.status}`));
-    }
-    return res.json() as Promise<{ status: string; updated_fields: string[] }>;
+    return validateShape(ProfileUpdateResponseSchema, data, "profile update");
 }
 
 // ── Auth Register ───────────────────────────────────────────────────────────────
@@ -921,14 +924,12 @@ export async function sendChatPublic(
     sessionId: string,
     signal?: AbortSignal
 ): Promise<ChatApiResponse> {
-    const res = await fetch(`${PROXY}/api/v1/rico/chat/public`, {
+    const data = await requestJson<unknown>("/api/v1/rico/chat/public", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         signal,
         body: JSON.stringify({ message, session_id: sessionId }),
     });
-    if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
-    return res.json() as Promise<ChatApiResponse>;
+    return validateShape(RicoChatResponseSchema, data, "public Rico chat");
 }
 
 // No user_id field — identity comes exclusively from the session cookie.
@@ -936,13 +937,32 @@ export async function sendChat(
     message: string,
     signal?: AbortSignal
 ): Promise<ChatApiResponse> {
-    const res = await fetch(`${PROXY}/api/v1/rico/chat`, {
+    const data = await requestJson<unknown>("/api/v1/rico/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         credentials: "include",
         signal,
         body: JSON.stringify({ message }),
     });
-    if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
-    return res.json() as Promise<ChatApiResponse>;
+    return validateShape(RicoChatResponseSchema, data, "authenticated Rico chat");
+}
+
+export interface ChatHistoryMessage {
+    role: string;
+    content: string;
+    timestamp?: string | null;
+}
+
+export interface ChatHistoryResponse {
+    messages: ChatHistoryMessage[];
+    total: number;
+    has_more: boolean;
+}
+
+export async function fetchChatHistory(limit = 20, before?: string): Promise<ChatHistoryResponse> {
+    const data = await requestJson<unknown>(
+        "/api/v1/rico/chat/history",
+        { method: "GET" },
+        { limit, before }
+    );
+    return validateShape(RicoChatHistoryResponseSchema, data, "Rico chat history");
 }

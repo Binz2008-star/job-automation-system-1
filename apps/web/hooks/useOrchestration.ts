@@ -1,41 +1,35 @@
 import { orchestrationApi } from '@/lib/api/orchestration';
 import { useOrchestrationStore } from '@/lib/store/useOrchestrationStore';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export function useOrchestration() {
-    const { trajectory, signals, addTrajectoryNode, addSignal, isProcessing } = useOrchestrationStore();
-    const [isLoading, setIsLoading] = useState(false);
+    const { trajectory, signals, setTrajectory, setSignals, isProcessing } = useOrchestrationStore();
+    const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchTrajectory = async () => {
-        setIsLoading(true);
-        setError(null);
+    const fetchTrajectory = useCallback(async () => {
         try {
             const data = await orchestrationApi.getTrajectory();
-            data.nodes.forEach((node) => addTrajectoryNode(node as any));
+            setTrajectory(data.nodes);
+            setError(null);
         } catch (err) {
             setError('Failed to fetch trajectory data');
             console.error(err);
-        } finally {
-            setIsLoading(false);
         }
-    };
+    }, [setTrajectory]);
 
-    const fetchSignals = async () => {
-        setIsLoading(true);
-        setError(null);
+    const fetchSignals = useCallback(async () => {
         try {
             const data = await orchestrationApi.getSignals();
-            data.forEach(addSignal);
+            setSignals(data);
+            setError(null);
         } catch (err) {
             setError('Failed to fetch signals');
             console.error(err);
-        } finally {
-            setIsLoading(false);
         }
-    };
+    }, [setSignals]);
 
-    const executeCommand = async (command: string) => {
+    const executeCommand = useCallback(async (command: string) => {
         setError(null);
         try {
             const response = await orchestrationApi.executeCommand(command);
@@ -45,12 +39,47 @@ export function useOrchestration() {
             console.error(err);
             throw err;
         }
-    };
+    }, []);
 
     useEffect(() => {
-        fetchTrajectory();
-        fetchSignals();
-    }, []);
+        let cancelled = false;
+
+        const load = async () => {
+            try {
+                await Promise.all([fetchTrajectory(), fetchSignals()]);
+            } finally {
+                if (!cancelled) {
+                    setIsLoading(false);
+                }
+            }
+        };
+
+        void load();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [fetchSignals, fetchTrajectory]);
+
+    const refetchTrajectory = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            await fetchTrajectory();
+        } finally {
+            setIsLoading(false);
+        }
+    }, [fetchTrajectory]);
+
+    const refetchSignals = useCallback(async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            await fetchSignals();
+        } finally {
+            setIsLoading(false);
+        }
+    }, [fetchSignals]);
 
     return {
         trajectory,
@@ -59,7 +88,7 @@ export function useOrchestration() {
         isProcessing,
         error,
         executeCommand,
-        refetchTrajectory: fetchTrajectory,
-        refetchSignals: fetchSignals,
+        refetchTrajectory,
+        refetchSignals,
     };
 }

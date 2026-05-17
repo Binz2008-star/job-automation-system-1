@@ -11,20 +11,23 @@ import { useCallback, useEffect, useState } from "react";
  * For dev with NEXT_PUBLIC_USE_MOCK=true, sets a synthetic dev user.
  */
 export function useAuth() {
-  const [user, setUser] = useState<StoredUser | null>(null);
-  const [ready, setReady] = useState(false);
+  const useMock = process.env.NEXT_PUBLIC_USE_MOCK === "true";
+  const [user, setUser] = useState<StoredUser | null>(() =>
+    useMock ? { user_id: "dev_user", name: "Dev User", email: "dev@rico.ai" } : null
+  );
+  const [ready, setReady] = useState(useMock);
   const router = useRouter();
 
   useEffect(() => {
-    const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
-    if (USE_MOCK) {
-      setUser({ user_id: "dev_user", name: "Dev User", email: "dev@rico.ai" });
-      setReady(true);
+    if (useMock) {
       return;
     }
 
+    let active = true;
+
     fetchMe()
       .then((me) => {
+        if (!active) return;
         if (me.authenticated && me.email) {
           setUser({
             user_id: me.email,
@@ -40,10 +43,19 @@ export function useAuth() {
       })
       .catch(() => {
         // On error, treat as guest
+        if (!active) return;
         setUser(null);
       })
-      .finally(() => setReady(true));
-  }, [router]);
+      .finally(() => {
+        if (active) {
+          setReady(true);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [router, useMock]);
 
   const logout = useCallback(async () => {
     await clearAuth();

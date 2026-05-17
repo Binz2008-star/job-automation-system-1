@@ -1,15 +1,31 @@
 "use client";
 
 import type { ChatApiResponse, JobMatch, NextAction, ProfilePreview, RicoOption, UploadCVResponse } from "@/lib/api";
-import { fetchMe, logout, sendChat, sendChatPublic, uploadCV } from "@/lib/api";
+import { confirmCVProfile, fetchMe, logout, sendChat, sendChatPublic, uploadCV } from "@/lib/api";
 import { buildAuthHref } from "@/lib/redirect";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-function getSessionId(sessionIdRef: React.RefObject<string | null>): string {
-    if (typeof window === "undefined") return "ssr-session";
-    return sessionIdRef.current || "ssr-session";
+function ensureSessionId(sessionIdRef: React.MutableRefObject<string | null>): string {
+    if (typeof window === "undefined") return sessionIdRef.current || "ssr-session";
+    if (!sessionIdRef.current) {
+        let sid = localStorage.getItem("rico_sid");
+        if (!sid) {
+            sid = "web-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9);
+            localStorage.setItem("rico_sid", sid);
+        }
+        sessionIdRef.current = sid;
+    }
+    return sessionIdRef.current;
+}
+
+function getSessionId(sessionIdRef: React.MutableRefObject<string | null>): string {
+    return ensureSessionId(sessionIdRef);
+}
+
+function prefersReducedMotion(): boolean {
+    return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 interface Message {
@@ -47,11 +63,12 @@ const COMMAND_SIGNUP_HREF = buildAuthHref("/signup", "/command");
 
 function ThinkingIndicator() {
     return (
-        <div className="flex justify-start animate-pulse">
+        <div className="flex justify-start animate-pulse motion-reduce:animate-none" role="status" aria-live="polite" aria-label="Rico is thinking">
             <div className="bg-[#13132a] border border-white/5 rounded-2xl rounded-tl-none px-4 py-4 flex gap-1.5 items-center backdrop-blur-md">
-                <span className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce [animation-duration:0.8s]" />
-                <span className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.2s]" />
-                <span className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.4s]" />
+                <span className="sr-only">Rico is thinking</span>
+                <span aria-hidden="true" className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce motion-reduce:animate-none [animation-duration:0.8s]" />
+                <span aria-hidden="true" className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce motion-reduce:animate-none [animation-duration:0.8s] [animation-delay:0.2s]" />
+                <span aria-hidden="true" className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce motion-reduce:animate-none [animation-duration:0.8s] [animation-delay:0.4s]" />
             </div>
         </div>
     );
@@ -67,9 +84,9 @@ function OperationStateIndicator({ state, message }: { state: string; message: s
     const icon = icons[state as keyof typeof icons] || "⏳";
 
     return (
-        <div className="flex justify-start animate-pulse">
+        <div className="flex justify-start animate-pulse motion-reduce:animate-none" role="status" aria-live="polite">
             <div className="bg-[#13132a] border border-white/5 rounded-2xl rounded-tl-none px-4 py-3 flex gap-2 items-center backdrop-blur-md">
-                <span className="text-lg">{icon}</span>
+                <span className="text-lg" aria-hidden="true">{icon}</span>
                 <span className="text-[13px] text-[#8080a0]">{message}</span>
             </div>
         </div>
@@ -201,6 +218,7 @@ function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt:
                 <div className="flex flex-wrap gap-1.5 mt-2">
                     {match.actions.map((action) => (
                         <button
+                            type="button"
                             key={action}
                             onClick={() => onAction(`${action} — ${match.title} at ${match.company}`)}
                             aria-label={`${action} for ${match.title} at ${match.company}`}
@@ -220,6 +238,7 @@ function OptionButtons({ options, onAction }: { options: RicoOption[]; onAction:
         <div className="flex flex-wrap gap-2 mt-2">
             {options.map((opt) => (
                 <button
+                    type="button"
                     key={opt.action}
                     onClick={() => onAction(opt.message ?? opt.label)}
                     className="text-[12px] px-3 py-2 rounded-xl border border-[#5b4fff]/30 text-[#a78bfa] hover:bg-[#5b4fff]/10 hover:border-[#5b4fff]/60 transition-colors rico-focus-strong"
@@ -233,14 +252,17 @@ function OptionButtons({ options, onAction }: { options: RicoOption[]; onAction:
 
 export default function CommandPage() {
     const router = useRouter();
+    const useMock = process.env.NEXT_PUBLIC_USE_MOCK === "true";
+    const prompt = typeof window === "undefined"
+        ? null
+        : new URLSearchParams(window.location.search).get("prompt");
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState("");
     const [thinking, setThinking] = useState(false);
     const [slowHint, setSlowHint] = useState(false);
     const [sessionExpired, setSessionExpired] = useState(false);
     const [uploadError, setUploadError] = useState("");
-    const [chatAudience, setChatAudience] = useState<ChatAudience>("checking");
-    const [mounted, setMounted] = useState(false);
+    const [chatAudience, setChatAudience] = useState<ChatAudience>(useMock ? "authenticated" : "checking");
     const [operationState, setOperationState] = useState<{ state: string; message: string } | null>(null);
     const [editingProfileId, setEditingProfileId] = useState<number | null>(null);
     const [draftProfile, setDraftProfile] = useState<ProfilePreview | null>(null);
@@ -250,22 +272,9 @@ export default function CommandPage() {
     const promptSentRef = useRef(false);
     const sessionIdRef = useRef<string | null>(null);
 
-    // Gate client-only logic to prevent hydration mismatch
     useEffect(() => {
-        setMounted(true);
-        // Initialize session ID on client only
-        let sid = localStorage.getItem("rico_sid");
-        if (!sid) {
-            sid = "web-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9);
-            localStorage.setItem("rico_sid", sid);
-        }
-        sessionIdRef.current = sid;
-    }, []);
-
-    useEffect(() => {
-        const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
-        if (USE_MOCK) {
-            setChatAudience("authenticated");
+        ensureSessionId(sessionIdRef);
+        if (useMock) {
             return;
         }
 
@@ -297,27 +306,20 @@ export default function CommandPage() {
             clearTimeout(fallbackId);
             controller.abort();
         };
+    }, [useMock]);
+
+    const scrollBottom = useCallback(() => {
+        const behavior = prefersReducedMotion() ? "auto" : "smooth";
+        if (typeof window !== "undefined") {
+            window.requestAnimationFrame(() => {
+                bottomRef.current?.scrollIntoView({ behavior });
+            });
+            return;
+        }
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior }), 50);
     }, []);
 
-    useEffect(() => {
-        if (chatAudience === "checking" || !mounted || typeof window === "undefined") return;
-        const params = new URLSearchParams(window.location.search);
-        const prompt = params.get("prompt");
-        if (prompt && !promptSentRef.current) {
-            promptSentRef.current = true;
-            sendMessage(prompt);
-        } else if (!promptSentRef.current) {
-            promptSentRef.current = true;
-            // Greet immediately
-            setMessages([{ id: 1, role: "rico", text: "I'm Rico, your career trajectory intelligence system. Ask me to analyze your trajectory, evaluate an opportunity, map your next move, or upload your CV so I can build your strategic profile." }]);
-        }
-    }, [chatAudience, mounted]);
-
-    function scrollBottom() {
-        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-    }
-
-    async function sendMessage(text: string) {
+    const sendMessage = useCallback(async (text: string) => {
         if (chatAudience === "checking") return;
         if (text === "__cv_upload__") {
             fileInputRef.current?.click();
@@ -409,7 +411,20 @@ export default function CommandPage() {
             scrollBottom();
             textareaRef.current?.focus();
         }
-    }
+    }, [chatAudience, scrollBottom, thinking]);
+
+    useEffect(() => {
+        if (chatAudience === "checking" || promptSentRef.current) return;
+        promptSentRef.current = true;
+        const timeoutId = window.setTimeout(() => {
+            if (prompt) {
+                void sendMessage(prompt);
+                return;
+            }
+            setMessages([{ id: 1, role: "rico", text: "I'm Rico, your career trajectory intelligence system. Ask me to analyze your trajectory, evaluate an opportunity, map your next move, or upload your CV so I can build your strategic profile." }]);
+        }, 0);
+        return () => window.clearTimeout(timeoutId);
+    }, [chatAudience, prompt, sendMessage]);
 
     async function handleCVUpload(e: React.ChangeEvent<HTMLInputElement>) {
         const file = e.target.files?.[0];
@@ -426,7 +441,7 @@ export default function CommandPage() {
                     ? await uploadCV(file)
                     : await uploadCV(file, `public:${getSessionId(sessionIdRef)}`);
             // Store returned user_id for guest→auth merge later (client-only)
-            if (mounted && result.user_id && result.user_id.startsWith("public:")) {
+            if (typeof window !== "undefined" && result.user_id && result.user_id.startsWith("public:")) {
                 localStorage.setItem("rico_public_uid", result.user_id);
             }
 
@@ -503,21 +518,8 @@ export default function CommandPage() {
         setThinking(true);
         setOperationState({ state: "confirming", message: "Saving profile..." });
         try {
-            const PROXY = "/proxy";
             const userId = `public:${getSessionId(sessionIdRef)}`;
-            const res = await fetch(
-                `${PROXY}/api/v1/rico/confirm-cv-profile?${new URLSearchParams({ user_id: userId })}`,
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify({ preview, filename }),
-                }
-            );
-            if (!res.ok) {
-                const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
-                throw new Error(body.detail ? String(body.detail) : `Confirm profile failed: ${res.status}`);
-            }
+            await confirmCVProfile({ preview, filename }, userId);
             setMessages((prev) => prev.map(m => m.id === messageId ? { ...m, type: "profile_confirmed", text: "Profile confirmed. I can now use it for job matching. Tell me your target roles and I'll start finding matches." } : m));
         } catch (err) {
             const msg = err instanceof Error ? err.message : "Confirmation failed";
@@ -566,8 +568,8 @@ export default function CommandPage() {
         <div className="min-h-screen bg-[#06060f] flex flex-col relative overflow-hidden">
             {/* Ambient glows matching landing page */}
             <div className="fixed inset-0 pointer-events-none z-0">
-                <div className="absolute -top-[250px] -left-[150px] w-[700px] h-[700px] rounded-full bg-[rgba(91,79,255,0.06)] blur-[140px]" />
-                <div className="absolute bottom-0 -right-[100px] w-[500px] h-[500px] rounded-full bg-[rgba(0,201,167,0.04)] blur-[140px]" />
+                <div aria-hidden="true" className="absolute -top-[250px] -left-[150px] w-[700px] h-[700px] rounded-full bg-[rgba(91,79,255,0.06)] blur-[140px]" />
+                <div aria-hidden="true" className="absolute bottom-0 -right-[100px] w-[500px] h-[500px] rounded-full bg-[rgba(0,201,167,0.04)] blur-[140px]" />
             </div>
 
             {/* Top nav — minimal, matches landing */}
@@ -610,13 +612,14 @@ export default function CommandPage() {
 
             <div className="relative z-10 flex flex-col flex-1 h-[calc(100vh-65px)] max-w-3xl w-full mx-auto px-4">
                 {/* Messages Container */}
-                <div className="flex-1 overflow-y-auto px-2 py-6 space-y-5 pb-32" role="log" aria-live="polite" aria-atomic="false">
+                <div className="flex-1 overflow-y-auto px-2 py-6 space-y-5 pb-32" role="log" aria-live="polite" aria-atomic="false" aria-busy={thinking}>
 
                     {/* Quick start (shown above first message) */}
                     {messages.length <= 1 && !thinking && (
                         <div className="flex flex-wrap justify-center gap-2 pb-4">
                             {QUICK_ACTIONS.map((qa) => (
                                 <button
+                                    type="button"
                                     key={qa.label}
                                     onClick={() => sendMessage(qa.prompt)}
                                     disabled={thinking || chatAudience === "checking"}
@@ -632,7 +635,7 @@ export default function CommandPage() {
                     {messages.map((m) => (
                         <div
                             key={m.id}
-                            className={`flex items-end gap-2 animate-in fade-in slide-in-from-bottom-2 ${m.role === "user" ? "justify-end" : "justify-start"
+                            className={`flex items-end gap-2 animate-in fade-in slide-in-from-bottom-2 motion-reduce:animate-none ${m.role === "user" ? "justify-end" : "justify-start"
                                 }`}
                         >
                             {m.role === "rico" && (
@@ -660,6 +663,7 @@ export default function CommandPage() {
                                 {m.type === "profile_preview" && m.preview && m.filename && editingProfileId !== m.id && (
                                     <div className="mt-3 flex gap-2">
                                         <button
+                                            type="button"
                                             onClick={() => handleConfirmProfile(m.preview!, m.filename!, m.id)}
                                             disabled={thinking}
                                             className="text-[12px] px-4 py-2 rounded-lg bg-[#5dcaa5] text-white font-medium hover:bg-[#4db894] transition-colors disabled:opacity-50"
@@ -667,6 +671,7 @@ export default function CommandPage() {
                                             Use this profile
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() => {
                                                 setEditingProfileId(m.id);
                                                 setDraftProfile(m.preview!);
@@ -718,6 +723,7 @@ export default function CommandPage() {
 
                                         <div className="flex gap-2 pt-1">
                                             <button
+                                                type="button"
                                                 onClick={() => {
                                                     handleConfirmProfile(draftProfile, m.filename!, m.id);
                                                     setEditingProfileId(null);
@@ -729,6 +735,7 @@ export default function CommandPage() {
                                                 Save profile
                                             </button>
                                             <button
+                                                type="button"
                                                 onClick={() => {
                                                     setEditingProfileId(null);
                                                     setDraftProfile(null);
@@ -758,6 +765,7 @@ export default function CommandPage() {
                                             <div className="flex flex-wrap gap-2 pt-1">
                                                 {m.next_actions.map((na) => (
                                                     <button
+                                                        type="button"
                                                         key={na.action}
                                                         onClick={() => sendMessage(na.message ?? na.label)}
                                                         className="text-[12px] px-3 py-2 rounded-xl border border-[#5b4fff]/30 text-[#a78bfa] hover:bg-[#5b4fff]/10 hover:border-[#5b4fff]/60 transition-colors rico-focus-strong"
@@ -790,7 +798,7 @@ export default function CommandPage() {
                                 <ThinkingIndicator />
                             )}
                             {slowHint && (
-                                <p className="text-[11px] text-[#5a5a7a] pl-9 animate-pulse">
+                                <p className="text-[11px] text-[#5a5a7a] pl-9 animate-pulse motion-reduce:animate-none" role="status">
                                     Rico is waking up — first request after idle can take up to a minute…
                                 </p>
                             )}
@@ -803,11 +811,12 @@ export default function CommandPage() {
                 {/* Floating input bar */}
                 <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#06060f] via-[#06060f]/95 to-transparent">
                     {uploadError && (
-                        <p className="text-[11px] text-red-400 mb-2 text-center">{uploadError}</p>
+                        <p className="text-[11px] text-red-400 mb-2 text-center" role="alert">{uploadError}</p>
                     )}
                     <div className="flex items-end gap-2">
                         {/* CV upload button */}
                         <button
+                            type="button"
                             onClick={() => fileInputRef.current?.click()}
                             disabled={thinking || chatAudience === "checking"}
                             title="Upload your CV (PDF)"
@@ -828,19 +837,22 @@ export default function CommandPage() {
                                 onKeyDown={handleKeyDown}
                                 disabled={thinking || chatAudience === "checking"}
                                 rows={1}
+                                aria-label="Message Rico"
+                                aria-describedby="command-input-hint"
                                 placeholder={chatAudience === "checking"
                                     ? "Checking your session…"
                                     : "Ask Rico anything — jobs, CV, applications, interviews…"}
                                 className="w-full resize-none bg-[#13132a]/80 border border-white/10 backdrop-blur-xl rounded-2xl py-3 pl-4 pr-12 text-sm text-white placeholder:text-[#5a5a7a] transition-all shadow-2xl"
                             />
                             <button
+                                type="button"
                                 onClick={handleSend}
                                 disabled={thinking || chatAudience === "checking" || !input.trim()}
                                 className="absolute right-2 top-1.5 bottom-1.5 w-9 h-9 rounded-xl bg-[#5b4fff] text-white flex items-center justify-center hover:bg-[#4a3fdf] transition-all disabled:opacity-30 disabled:grayscale rico-focus-strong"
                                 aria-label={thinking ? "Sending…" : "Send"}
                             >
                                 {thinking ? (
-                                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin motion-reduce:animate-none" />
                                 ) : (
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                         <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
@@ -849,7 +861,7 @@ export default function CommandPage() {
                             </button>
                         </div>
                     </div>
-                    <p className="text-center text-[10px] text-[#5a5a7a] mt-2 opacity-40">
+                    <p id="command-input-hint" className="text-center text-[10px] text-[#5a5a7a] mt-2 opacity-40">
                         Enter to send · Shift+Enter for new line · 📎 to upload CV
                     </p>
                 </div>

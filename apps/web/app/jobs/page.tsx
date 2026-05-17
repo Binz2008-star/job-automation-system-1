@@ -36,11 +36,10 @@ export default function JobsPage() {
 
     const fetchJobs = useCallback(async () => {
         if (!user) return;
-        setLoading(true);
-        setError(null);
         try {
             const response = await getJobs();
             setJobs(response.jobs || []);
+            setError(null);
         } catch (err) {
             const is401 = err instanceof ApiError && err.statusCode === 401;
             setError(is401 ? "auth" : "other");
@@ -51,7 +50,17 @@ export default function JobsPage() {
     }, [user, toast]);
 
     useEffect(() => {
-        fetchJobs();
+        if (!user) return;
+        const timeoutId = window.setTimeout(() => {
+            void fetchJobs();
+        }, 0);
+        return () => window.clearTimeout(timeoutId);
+    }, [fetchJobs, user]);
+
+    const handleRetry = useCallback(() => {
+        setLoading(true);
+        setError(null);
+        void fetchJobs();
     }, [fetchJobs]);
 
     const filtered = useMemo(
@@ -190,7 +199,7 @@ export default function JobsPage() {
             ) : error ? (
                 <ErrorState
                     variant={error === "auth" ? "auth" : "network"}
-                    onRetry={fetchJobs}
+                    onRetry={handleRetry}
                 />
             ) : filtered.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -3,51 +3,68 @@ import {
     AgentUIResponseSchema,
     ApplicationCreateRequestSchema,
     ApplicationListResponseSchema,
+    ConfirmCVProfileResponseSchema,
     JobActionRequestSchema,
     JobActionResponseSchema,
     JobListResponseSchema,
     LoginRequestSchema,
     LoginResponseSchema,
     ManualApplicationCreateRequestSchema,
+    MeResponseSchema,
     PipelineStatusResponseSchema,
     PipelineTriggerResponseSchema,
+    ProfileUpdateResponseSchema,
+    RicoChatHistoryResponseSchema,
     RegisterRequestSchema,
     RegisterResponseSchema,
+    RicoChatResponseSchema,
     RicoChatRequestSchema,
     RicoFeedbackRequestSchema,
+    RicoProfileResponseSchema,
     RicoPublicChatRequestSchema,
+    SavedSearchesResponseSchema,
     SettingsResponseSchema,
     SettingsUpdateRequestSchema,
     StatsResponseSchema,
     StatusUpdateRequestSchema,
     StatusUpdateResponseSchema,
+    UploadCVResponseSchema,
     type AgentChatRequest,
     type AgentUIResponse,
     type ApplicationCreateRequest,
     type ApplicationListResponse,
+    type ConfirmCVProfileResponse,
     type JobActionRequest,
     type JobActionResponse,
     type JobListResponse,
     type LoginRequest,
     type LoginResponse,
     type ManualApplicationCreateRequest,
+    type MeResponse,
     type PipelineStatusResponse,
     type PipelineTriggerResponse,
+    type ProfileUpdateResponse,
+    type RicoChatHistoryResponse,
+    type RicoChatResponse,
     type RegisterRequest,
     type RegisterResponse,
     type RicoChatRequest,
     type RicoFeedbackRequest,
+    type RicoProfileResponse,
     type RicoPublicChatRequest,
+    type SavedSearchesResponse,
     type SettingsResponse,
     type SettingsUpdateRequest,
     type StatsResponse,
     type StatusUpdateRequest,
     type StatusUpdateResponse,
+    type UploadCVResponse,
 } from '@/lib/schemas';
 import axios from 'axios';
 import { z } from 'zod';
 
 const API_BASE_URL =
+    process.env.BACKEND_API_BASE_URL ||
     process.env.NEXT_PUBLIC_API_BASE_URL ||
     process.env.NEXT_PUBLIC_RICO_API ||
     process.env.NEXT_PUBLIC_API_URL ||
@@ -243,41 +260,66 @@ export const agentApi = {
 // ============================================================================
 
 export const ricoChatApi = {
-    chat: async (data: RicoChatRequest): Promise<any> => {
+    chat: async (data: RicoChatRequest): Promise<RicoChatResponse> => {
         const payload = RicoChatRequestSchema.parse(data);
         const response = await apiClient.post('/api/v1/rico/chat', payload);
-        return response.data;
+        return validateResponse(RicoChatResponseSchema, response.data, 'Rico chat');
     },
 
-    publicChat: async (data: RicoPublicChatRequest): Promise<any> => {
+    publicChat: async (data: RicoPublicChatRequest): Promise<RicoChatResponse> => {
         const payload = RicoPublicChatRequestSchema.parse(data);
         const response = await apiClient.post('/api/v1/rico/chat/public', payload);
-        return response.data;
+        return validateResponse(RicoChatResponseSchema, response.data, 'Rico public chat');
     },
 
-    getProfile: async (): Promise<any> => {
+    getProfile: async (): Promise<RicoProfileResponse> => {
         const response = await apiClient.get('/api/v1/rico/profile');
-        return response.data;
+        return validateResponse(RicoProfileResponseSchema, response.data, 'Rico profile');
     },
 
-    getChatHistory: async (): Promise<any> => {
+    getChatHistory: async (): Promise<RicoChatHistoryResponse> => {
         const response = await apiClient.get('/api/v1/rico/chat/history');
-        return response.data;
+        return validateResponse(RicoChatHistoryResponseSchema, response.data, 'Rico chat history');
     },
 
-    uploadCV: async (file: File): Promise<any> => {
+    uploadCV: async (file: File): Promise<UploadCVResponse> => {
         const formData = new FormData();
         formData.append('file', file);
         const response = await apiClient.post('/api/v1/rico/upload-cv', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
         });
-        return response.data;
+        return validateResponse(UploadCVResponseSchema, response.data, 'Rico CV upload');
     },
 
-    submitFeedback: async (data: RicoFeedbackRequest): Promise<any> => {
+    submitFeedback: async (data: RicoFeedbackRequest): Promise<void> => {
         const payload = RicoFeedbackRequestSchema.parse(data);
-        const response = await apiClient.post('/api/v1/rico/feedback', payload);
-        return response.data;
+        await apiClient.post('/api/v1/rico/feedback', payload);
+    },
+
+    confirmCVProfile: async (
+        preview: Record<string, unknown>,
+        filename: string,
+        user_id?: string
+    ): Promise<ConfirmCVProfileResponse> => {
+        const response = await apiClient.post('/api/v1/rico/confirm-cv-profile', { preview, filename }, {
+            params: user_id ? { user_id } : undefined,
+        });
+        return validateResponse(ConfirmCVProfileResponseSchema, response.data, 'confirm CV profile');
+    },
+
+    updateProfile: async (data: Record<string, unknown>): Promise<ProfileUpdateResponse> => {
+        const response = await apiClient.patch('/api/v1/rico/profile', data);
+        return validateResponse(ProfileUpdateResponseSchema, response.data, 'Rico profile update');
+    },
+
+    me: async (): Promise<MeResponse> => {
+        const response = await apiClient.get('/api/v1/me');
+        return validateResponse(MeResponseSchema, response.data, 'auth /me');
+    },
+
+    savedSearches: async (): Promise<SavedSearchesResponse> => {
+        const response = await apiClient.get('/api/v1/rico/settings/saved-searches');
+        return validateResponse(SavedSearchesResponseSchema, response.data, 'saved searches');
     },
 };
 

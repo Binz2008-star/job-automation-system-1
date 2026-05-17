@@ -27,9 +27,6 @@ export function DashboardStats() {
   const [error, setError] = useState<"auth" | "other" | null>(null);
 
   const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
     try {
       const [jobsResult, appsResult, statsResult, settingsResult] =
         await Promise.allSettled([
@@ -55,6 +52,7 @@ export function DashboardStats() {
         return;
       }
 
+      setError(null);
       setStats({
         jobsTotal: jobsRes?.total ?? 0,
         appsTotal: appsRes?.total ?? 0,
@@ -74,7 +72,10 @@ export function DashboardStats() {
   }, []);
 
   useEffect(() => {
-    loadData();
+    const timeoutId = window.setTimeout(() => {
+      void loadData();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [loadData]);
 
   if (loading) return <StatsSkeleton />;

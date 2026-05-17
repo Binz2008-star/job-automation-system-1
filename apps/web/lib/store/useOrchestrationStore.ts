@@ -26,6 +26,8 @@ interface OrchestrationState {
   commandHistory: string[];
   isProcessing: boolean;
   currentCommand: string;
+  setTrajectory: (nodes: TrajectoryNode[]) => void;
+  setSignals: (signals: OpportunitySignal[]) => void;
   addTrajectoryNode: (node: TrajectoryNode) => void;
   addSignal: (signal: OpportunitySignal) => void;
   executeCommand: (command: string) => Promise<void>;
@@ -38,6 +40,12 @@ export const useOrchestrationStore = create<OrchestrationState>((set, get) => ({
   commandHistory: [],
   isProcessing: false,
   currentCommand: '',
+  setTrajectory: (nodes) => {
+    set({ trajectory: nodes });
+  },
+  setSignals: (signals) => {
+    set({ signals });
+  },
   addTrajectoryNode: (node) => {
     set((state) => ({ trajectory: [...state.trajectory, node] }));
   },

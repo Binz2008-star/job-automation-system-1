@@ -1,5 +1,8 @@
+'use client';
+
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import React from 'react';
 import { MaterialIcon } from '../ui/MaterialIcon';
 
@@ -9,6 +12,13 @@ interface TopNavProps {
 
 export const TopNav = React.forwardRef<HTMLElement, TopNavProps>(
     ({ className }, ref) => {
+        const pathname = usePathname();
+
+        const linkClass = (href: string) =>
+            pathname === href
+                ? 'text-primary font-bold'
+                : 'text-on-surface-muted font-normal hover:text-primary transition-colors duration-500';
+
         return (
             <header
                 ref={ref as any}
@@ -25,28 +35,32 @@ export const TopNav = React.forwardRef<HTMLElement, TopNavProps>(
                         Rico AI
                     </Link>
                     <div className="flex items-center gap-8">
-                        <nav className="hidden md:flex items-center gap-10">
+                        <nav className="hidden md:flex items-center gap-10" aria-label="Primary navigation">
                             <Link
                                 href="/command"
-                                className="text-primary font-bold transition-colors duration-500 hover:text-primary"
+                                aria-current={pathname === "/command" ? "page" : undefined}
+                                className={linkClass("/command")}
                             >
                                 Command
                             </Link>
                             <Link
                                 href="/signals"
-                                className="text-on-surface-muted font-normal hover:text-primary transition-colors duration-500"
+                                aria-current={pathname === "/signals" ? "page" : undefined}
+                                className={linkClass("/signals")}
                             >
                                 Signals
                             </Link>
                             <Link
                                 href="/flow"
-                                className="text-on-surface-muted font-normal hover:text-primary transition-colors duration-500"
+                                aria-current={pathname === "/flow" ? "page" : undefined}
+                                className={linkClass("/flow")}
                             >
                                 Flow
                             </Link>
                             <Link
                                 href="/archive"
-                                className="text-on-surface-muted font-normal hover:text-primary transition-colors duration-500"
+                                aria-current={pathname === "/archive" ? "page" : undefined}
+                                className={linkClass("/archive")}
                             >
                                 Archive
                             </Link>

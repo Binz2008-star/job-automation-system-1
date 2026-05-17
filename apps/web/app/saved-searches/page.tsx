@@ -13,17 +13,29 @@ export default function SavedSearchesPage() {
     const [error, setError] = useState(false);
     const [loading, setLoading] = useState(true);
 
-    const loadSearches = useCallback(() => {
-        setError(false);
-        setLoading(true);
-        fetchSavedSearches()
-            .then((r) => setSearches(r.searches))
-            .catch(() => setError(true))
-            .finally(() => setLoading(false));
+    const loadSearches = useCallback(async () => {
+        try {
+            const response = await fetchSavedSearches();
+            setSearches(response.searches);
+            setError(false);
+        } catch {
+            setError(true);
+        } finally {
+            setLoading(false);
+        }
     }, []);
 
     useEffect(() => {
-        loadSearches();
+        const timeoutId = window.setTimeout(() => {
+            void loadSearches();
+        }, 0);
+        return () => window.clearTimeout(timeoutId);
+    }, [loadSearches]);
+
+    const handleRetry = useCallback(() => {
+        setError(false);
+        setLoading(true);
+        void loadSearches();
     }, [loadSearches]);
 
     return (
@@ -34,7 +46,7 @@ export default function SavedSearchesPage() {
                 {!loading && error && (
                     <ErrorState
                         variant="network"
-                        onRetry={loadSearches}
+                        onRetry={handleRetry}
                     />
                 )}
 

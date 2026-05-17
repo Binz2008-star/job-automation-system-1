@@ -220,6 +220,171 @@ export const RicoFeedbackRequestSchema = z.object({
     comment: z.string().max(500).optional(),
 });
 
+export const MeResponseSchema = z.object({
+    email: z.string().nullable(),
+    role: z.string(),
+    authenticated: z.boolean(),
+    guest: z.boolean().optional(),
+});
+
+export const JobMatchSchema = z.object({
+    title: z.string(),
+    company: z.string(),
+    location: z.string().optional(),
+    score: z.number().optional(),
+    why: z.string().optional(),
+    actions: z.array(z.string()).optional(),
+    confidence: z.enum(['high', 'medium', 'low']).optional(),
+    match_reasons: z.array(z.string()).optional(),
+    match_concerns: z.array(z.string()).optional(),
+    missing_facts: z.array(z.string()).optional(),
+    recommended_action: z.string().optional(),
+}).passthrough();
+
+export const RicoOptionSchema = z.object({
+    action: z.string(),
+    label: z.string(),
+    message: z.string().optional(),
+    role: z.string().optional(),
+}).passthrough();
+
+export const NextActionSchema = z.object({
+    action: z.string(),
+    label: z.string(),
+    message: z.string().optional(),
+    role: z.string().optional(),
+}).passthrough();
+
+export const RicoChatResponseSchema = z.object({
+    response: z.string().optional(),
+    reply: z.string().optional(),
+    message: z.string().optional(),
+    content: z.string().optional(),
+    answer: z.string().optional(),
+    text: z.string().optional(),
+    data: z.object({
+        response: z.string().optional(),
+        reply: z.string().optional(),
+        message: z.string().optional(),
+        content: z.string().optional(),
+        text: z.string().optional(),
+    }).passthrough().optional(),
+    type: z.string().optional(),
+    matches: z.array(JobMatchSchema).optional(),
+    options: z.array(RicoOptionSchema).optional(),
+    next_action: z.string().optional(),
+    response_source: z.string().optional(),
+    role: z.string().optional(),
+    reasons: z.array(z.string()).optional(),
+    next_actions: z.array(NextActionSchema).optional(),
+    success: z.boolean().optional(),
+    debug_id: z.string().optional(),
+    error: z.string().optional(),
+    error_ref: z.string().optional(),
+    provider: z.string().optional(),
+    model: z.string().optional(),
+    profile_context_present: z.boolean().optional(),
+}).passthrough();
+
+export const RicoProfileResponseSchema = z.object({
+    profile_exists: z.boolean(),
+    email: z.string().optional(),
+    user_id: z.string().optional(),
+    name: z.string().nullable().optional(),
+    phone: z.string().nullable().optional(),
+    telegram_username: z.string().nullable().optional(),
+    target_roles: z.array(z.string()).optional(),
+    preferred_cities: z.array(z.string()).optional(),
+    salary_expectation_aed: z.number().nullable().optional(),
+    minimum_salary_aed: z.number().nullable().optional(),
+    skills: z.array(z.string()).optional(),
+    industries: z.array(z.string()).optional(),
+    visa_status: z.string().nullable().optional(),
+    notice_period: z.string().nullable().optional(),
+    years_experience: z.number().nullable().optional(),
+    current_role: z.string().nullable().optional(),
+    current_company: z.string().nullable().optional(),
+    linkedin_url: z.string().nullable().optional(),
+    completeness_score: z.number().nullable().optional(),
+    settings: z.record(z.string(), z.unknown()).optional(),
+}).passthrough();
+
+export const SavedSearchSchema = z.object({
+    id: z.union([z.string(), z.number()]).transform(String),
+    query: z.string(),
+    filters: z.record(z.string(), z.unknown()),
+    created_at: z.string(),
+}).passthrough();
+
+export const SavedSearchesResponseSchema = z.object({
+    searches: z.array(SavedSearchSchema),
+    total: z.number(),
+});
+
+export const RicoChatHistoryMessageSchema = z.object({
+    role: z.string(),
+    content: z.string(),
+    timestamp: z.string().nullable().optional(),
+}).passthrough();
+
+export const RicoChatHistoryResponseSchema = z.object({
+    messages: z.array(RicoChatHistoryMessageSchema),
+    total: z.number(),
+    has_more: z.boolean(),
+}).passthrough();
+
+export const ParsedCVSchema = z.object({
+    text: z.string(),
+    emails: z.array(z.string()),
+    phones: z.array(z.string()),
+    skills: z.array(z.string()),
+    certifications: z.array(z.string()),
+    languages: z.array(z.string()),
+    years_experience_hint: z.number().nullable().optional(),
+    years_experience: z.number().nullable().optional(),
+    extraction_quality: z.string().optional(),
+    extracted_chars: z.number().optional(),
+}).passthrough();
+
+export const ProfilePreviewSchema = z.object({
+    name: z.string().nullable(),
+    email: z.string().nullable(),
+    phone: z.string().nullable(),
+    current_role: z.string().nullable(),
+    experience_years: z.number().nullable(),
+    target_roles: z.array(z.string()),
+    skills_detected: z.array(z.string()),
+    existing_skills: z.array(z.string()),
+    skills: z.array(z.string()),
+    certifications: z.array(z.string()),
+    languages: z.array(z.string()),
+}).passthrough();
+
+export const UploadCVResponseSchema = z.object({
+    ok: z.boolean(),
+    status: z.string(),
+    document_type: z.string().optional(),
+    extraction_quality: z.string().optional(),
+    extracted_chars: z.number().optional(),
+    filename: z.string().optional(),
+    preview: ProfilePreviewSchema.optional(),
+    parsed: ParsedCVSchema.optional(),
+    message: z.string().optional(),
+    user_id: z.string().optional(),
+}).passthrough();
+
+export const ConfirmCVProfileResponseSchema = z.object({
+    ok: z.boolean(),
+    status: z.string(),
+    message: z.string(),
+    profile: z.record(z.string(), z.unknown()),
+}).passthrough();
+
+export const ProfileUpdateResponseSchema = z.object({
+    status: z.string(),
+    updated_fields: z.array(z.string()),
+}).passthrough();
+
 // ============================================================================
 // Memory Schemas (for persistent memory system)
 // ============================================================================
@@ -411,6 +576,17 @@ export type AgentUIResponse = z.infer<typeof AgentUIResponseSchema>;
 export type RicoChatRequest = z.infer<typeof RicoChatRequestSchema>;
 export type RicoPublicChatRequest = z.infer<typeof RicoPublicChatRequestSchema>;
 export type RicoFeedbackRequest = z.infer<typeof RicoFeedbackRequestSchema>;
+export type MeResponse = z.infer<typeof MeResponseSchema>;
+export type RicoChatResponse = z.infer<typeof RicoChatResponseSchema>;
+export type RicoProfileResponse = z.infer<typeof RicoProfileResponseSchema>;
+export type SavedSearch = z.infer<typeof SavedSearchSchema>;
+export type SavedSearchesResponse = z.infer<typeof SavedSearchesResponseSchema>;
+export type RicoChatHistoryResponse = z.infer<typeof RicoChatHistoryResponseSchema>;
+export type ParsedCV = z.infer<typeof ParsedCVSchema>;
+export type ProfilePreview = z.infer<typeof ProfilePreviewSchema>;
+export type UploadCVResponse = z.infer<typeof UploadCVResponseSchema>;
+export type ConfirmCVProfileResponse = z.infer<typeof ConfirmCVProfileResponseSchema>;
+export type ProfileUpdateResponse = z.infer<typeof ProfileUpdateResponseSchema>;
 
 export type LongitudinalMemory = z.infer<typeof LongitudinalMemorySchema>;
 export type TrajectoryHistory = z.infer<typeof TrajectoryHistorySchema>;
