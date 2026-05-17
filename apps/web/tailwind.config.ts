@@ -10,85 +10,87 @@ const config: Config = {
     theme: {
         extend: {
             colors: {
-                // Rico AI Cinematic Design System
-                background: "#06060f",
-                surface: "#0d0d1f",
-                "surface-dim": "#090914",
-                "surface-bright": "#20203a",
-                "surface-container": "#14142a",
-                "surface-container-low": "#101023",
-                "surface-container-lowest": "#080811",
-                "surface-container-high": "#1b1b35",
-                "surface-container-highest": "#232345",
-                "surface-variant": "#2d2d4c",
-                "surface-tint": "#5b4fff",
+                // Rico AI Cinematic Design System v2
+                // Based on DESIGN.md spec: pure black + magenta + cyan
 
-                on: {
-                    background: "#e5e2e1",
-                    surface: "#e5e2e1",
-                    "surface-variant": "#b9cac9",
-                    primary: "#003737",
-                    "primary-container": "#007070",
-                    secondary: "#5b005b",
-                    "secondary-container": "#500050",
-                    tertiary: "#383100",
-                    "tertiary-container": "#716500",
-                    error: "#690005",
-                    "error-container": "#ffdad6",
+                // Global Canvas - Pure Black
+                background: "#000000",
+                surface: {
+                    DEFAULT: "#0a0a0f",
+                    elevated: "#111116",
+                    subtle: "rgba(255, 255, 255, 0.02)",
+                    glass: "rgba(255, 255, 255, 0.04)",
                 },
 
+                // Primary System - Magenta
+                magenta: {
+                    DEFAULT: "#ff2d8e",
+                    glow: "rgba(255, 45, 142, 0.3)",
+                    soft: "rgba(255, 45, 142, 0.1)",
+                    dim: "rgba(255, 45, 142, 0.05)",
+                    hover: "#ff4a9e",
+                },
+
+                // Secondary System - Cyan
+                cyan: {
+                    DEFAULT: "#00e5ff",
+                    glow: "rgba(0, 229, 255, 0.3)",
+                    soft: "rgba(0, 229, 255, 0.1)",
+                    dim: "rgba(0, 229, 255, 0.05)",
+                    hover: "#33ebff",
+                },
+
+                // Gradient System
+                gradient: {
+                    magenta: "linear-gradient(135deg, #ff2d8e 0%, #ff1a5c 100%)",
+                    cyan: "linear-gradient(135deg, #00e5ff 0%, #00b8cc 100%)",
+                    duo: "linear-gradient(135deg, #ff2d8e 0%, #00e5ff 100%)",
+                    subtle: "linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%)",
+                },
+
+                // Text System - High Contrast White + Grayscale
+                text: {
+                    primary: "#ffffff",
+                    secondary: "rgba(255, 255, 255, 0.72)",
+                    tertiary: "rgba(255, 255, 255, 0.48)",
+                    muted: "rgba(255, 255, 255, 0.28)",
+                    disabled: "rgba(255, 255, 255, 0.16)",
+                },
+
+                // Border System
+                border: {
+                    subtle: "rgba(255, 255, 255, 0.06)",
+                    soft: "rgba(255, 255, 255, 0.1)",
+                    medium: "rgba(255, 255, 255, 0.16)",
+                    strong: "rgba(255, 255, 255, 0.24)",
+                    gradient: "linear-gradient(135deg, rgba(255,45,142,0.5) 0%, rgba(0,229,255,0.5) 100%)",
+                },
+
+                // Legacy compatibility layer (transition period)
+                // These map to new system for backward compatibility
+                "surface-container": "#0a0a0f",
+                "surface-variant": "#111116",
                 primary: "#ffffff",
-                "primary-fixed": "#00fbfb",
-                "primary-fixed-dim": "#00dddd",
-                "on-primary-fixed": "#002020",
-                "on-primary-fixed-variant": "#004f4f",
-                "inverse-primary": "#006a6a",
-
-                secondary: "#ffabf3",
-                "secondary-fixed": "#ffd7f5",
-                "secondary-fixed-dim": "#ffabf3",
-                "on-secondary-fixed": "#380038",
-                "on-secondary-fixed-variant": "#810081",
-
-                tertiary: "#ffffff",
-                "tertiary-fixed": "#fce442",
-                "tertiary-fixed-dim": "#dec723",
-                "on-tertiary-fixed": "#201c00",
-                "on-tertiary-fixed-variant": "#504700",
-
-                error: "#ffb4ab",
-                "error-container": "#93000a",
-
-                outline: "#839493",
-                "outline-variant": "#3a4a49",
-
-                "inverse-surface": "#e5e2e1",
-                "inverse-on-surface": "#313030",
-
-                // Surface glass for glassmorphism
-                "surface-glass": "rgba(255, 255, 255, 0.03)",
-
-                // Glow effects
-                "glow-cyan": "rgba(0, 229, 255, 0.12)",
-                "glow-magenta": "rgba(255, 45, 142, 0.18)",
-
+                secondary: "#00e5ff",
+                error: "#ff5e5b",
+                outline: "rgba(255, 255, 255, 0.1)",
                 rico: {
-                    bg: "#06060f",
-                    surface: "#121226",
-                    "surface-2": "#17172d",
-                    border: "rgba(255, 255, 255, 0.08)",
-                    accent: "#5b4fff",
-                    "accent-hover": "#4a3fdf",
-                    "accent-muted": "rgba(91, 79, 255, 0.14)",
-                    "accent-border": "rgba(91, 79, 255, 0.3)",
-                    "accent-glow": "rgba(91, 79, 255, 0.16)",
-                    text: "#f5f2ff",
-                    "text-muted": "#c8c2dd",
-                    "text-dim": "#877f9f",
-                    purple: "#a78bfa",
-                    teal: "#5dcaa5",
-                    red: "#f87171",
-                    amber: "#facc15",
+                    bg: "#000000",
+                    surface: "#0a0a0f",
+                    "surface-2": "#111116",
+                    border: "rgba(255, 255, 255, 0.06)",
+                    accent: "#ff2d8e",
+                    "accent-hover": "#ff4a9e",
+                    "accent-muted": "rgba(255, 45, 142, 0.1)",
+                    "accent-border": "rgba(255, 45, 142, 0.4)",
+                    "accent-glow": "rgba(255, 45, 142, 0.2)",
+                    text: "#ffffff",
+                    "text-muted": "rgba(255, 255, 255, 0.72)",
+                    "text-dim": "rgba(255, 255, 255, 0.48)",
+                    purple: "#ff2d8e",
+                    teal: "#00e5ff",
+                    red: "#ff5e5b",
+                    amber: "#f5a623",
                 },
             },
             borderRadius: {
@@ -107,9 +109,10 @@ const config: Config = {
                 "container-padding-desktop": "120px",
             },
             fontFamily: {
-                display: ["var(--font-sora)", "sans-serif"],
-                headline: ["var(--font-sora)", "sans-serif"],
-                body: ["var(--font-inter)", "sans-serif"],
+                // DESIGN.md spec: IBM Plex Sans Variable + Sora
+                display: ["var(--font-ibm-plex-sans)", "var(--font-sora)", "sans-serif"],
+                headline: ["var(--font-ibm-plex-sans)", "var(--font-sora)", "sans-serif"],
+                body: ["var(--font-ibm-plex-sans)", "system-ui", "sans-serif"],
                 mono: ["var(--font-space-mono)", "monospace"],
             },
             fontSize: {

@@ -2,21 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Rico AI Cinematic Design System v2
+ * Based on DESIGN.md spec: pure black + magenta + cyan
+ */
+
 :root {
-    --focus-ring: #00fbfb;
-    --focus-ring-shadow: rgba(0, 251, 251, 0.16);
+    /* Focus ring - cyan accent */
+    --focus-ring: #00e5ff;
+    --focus-ring-shadow: rgba(0, 229, 255, 0.16);
     --focus-ring-offset: 3px;
     --focus-ring-width: 3px;
+
+    /* Cinematic color tokens */
+    --magenta: #ff2d8e;
+    --magenta-glow: rgba(255, 45, 142, 0.3);
+    --cyan: #00e5ff;
+    --cyan-glow: rgba(0, 229, 255, 0.3);
+    --pure-black: #000000;
+    --surface: #0a0a0f;
 }
 
 html,
 body {
+    /* Pure black global canvas per DESIGN.md */
     background:
-        radial-gradient(circle at top left, rgba(91, 79, 255, 0.12) 0%, rgba(6, 6, 15, 0) 38%),
-        radial-gradient(circle at bottom right, rgba(0, 201, 167, 0.09) 0%, rgba(6, 6, 15, 0) 32%),
-        #06060f;
-    color: #f5f2ff;
-    font-family: var(--font-inter), system-ui, sans-serif;
+        radial-gradient(circle at top left, rgba(255, 45, 142, 0.08) 0%, transparent 38%),
+        radial-gradient(circle at bottom right, rgba(0, 229, 255, 0.06) 0%, transparent 32%),
+        #000000;
+    color: #ffffff;
+    font-family: var(--font-ibm-plex-sans), system-ui, sans-serif;
     height: 100%;
     overflow-x: hidden;
 }

@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
-import { Inter, Sora, Space_Mono } from "next/font/google";
+import { IBM_Plex_Sans, Sora, Space_Mono } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
+// DESIGN.md spec: IBM Plex Sans Variable + Sora
+const ibmPlexSans = IBM_Plex_Sans({
     subsets: ["latin"],
-    variable: "--font-inter",
+    weight: ["300", "400", "500", "600", "700"],
+    variable: "--font-ibm-plex-sans",
     display: "swap",
 });
 
@@ -46,7 +48,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
         <html lang="en" className="dark">
-            <body className={`${inter.variable} ${sora.variable} ${spaceMono.variable} antialiased bg-background text-on-surface font-body overflow-x-hidden`}>
+            <body className={`${ibmPlexSans.variable} ${sora.variable} ${spaceMono.variable} antialiased bg-background text-text-primary font-body overflow-x-hidden`}>
                 {children}
             </body>
         </html>
