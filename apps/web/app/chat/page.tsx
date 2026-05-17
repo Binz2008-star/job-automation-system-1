@@ -8,25 +8,25 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 function getSessionId(sessionIdRef: React.RefObject<string | null>): string {
-  if (typeof window === "undefined") return "ssr-session";
-  return sessionIdRef.current || "ssr-session";
+    if (typeof window === "undefined") return "ssr-session";
+    return sessionIdRef.current || "ssr-session";
 }
 
 interface Message {
-  id: number;
-  role: "user" | "rico";
-  text: string;
-  type?: string;
-  matches?: JobMatch[];
-  options?: RicoOption[];
-  next_action?: string;
-  freeMode?: boolean;
-  roleName?: string;
-  reasons?: string[];
-  next_actions?: NextAction[];
-  preview?: ProfilePreview;
-  filename?: string;
-  extractionQuality?: string;
+    id: number;
+    role: "user" | "rico";
+    text: string;
+    type?: string;
+    matches?: JobMatch[];
+    options?: RicoOption[];
+    next_action?: string;
+    freeMode?: boolean;
+    roleName?: string;
+    reasons?: string[];
+    next_actions?: NextAction[];
+    preview?: ProfilePreview;
+    filename?: string;
+    extractionQuality?: string;
 }
 
 type ChatAudience = "checking" | "authenticated" | "public";
@@ -35,823 +35,825 @@ let _id = 0;
 function nextId() { return ++_id; }
 
 const QUICK_ACTIONS = [
-  { label: "Find UAE jobs for me", prompt: "Find matching UAE jobs for me." },
-  { label: "Set my target role", prompt: "I want to set my target role and job preferences." },
-  { label: "Upload my CV", prompt: "__cv_upload__" },
-  { label: "Track my applications", prompt: "Show my tracked applications." },
-  { label: "Prepare for an interview", prompt: "Help me prepare for an interview." },
-  { label: "Draft a cover letter", prompt: "Draft a cover letter for a job." },
+    { label: "Find UAE jobs for me", prompt: "Find matching UAE jobs for me." },
+    { label: "Set my target role", prompt: "I want to set my target role and job preferences." },
+    { label: "Upload my CV", prompt: "__cv_upload__" },
+    { label: "Track my applications", prompt: "Show my tracked applications." },
+    { label: "Prepare for an interview", prompt: "Help me prepare for an interview." },
+    { label: "Draft a cover letter", prompt: "Draft a cover letter for a job." },
 ];
 const CHAT_LOGIN_HREF = buildAuthHref("/login", "/chat");
 const CHAT_SIGNUP_HREF = buildAuthHref("/signup", "/chat");
 
 function ThinkingIndicator() {
-  return (
-    <div className="flex justify-start animate-pulse">
-      <div className="bg-[#13132a] border border-white/5 rounded-2xl rounded-tl-none px-4 py-4 flex gap-1.5 items-center backdrop-blur-md">
-        <span className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce [animation-duration:0.8s]" />
-        <span className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.2s]" />
-        <span className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.4s]" />
-      </div>
-    </div>
-  );
+    return (
+        <div className="flex justify-start animate-pulse">
+            <div className="bg-[#13132a] border border-white/5 rounded-2xl rounded-tl-none px-4 py-4 flex gap-1.5 items-center backdrop-blur-md">
+                <span className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce [animation-duration:0.8s]" />
+                <span className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.2s]" />
+                <span className="w-1.5 h-1.5 bg-[#a78bfa] rounded-full animate-bounce [animation-duration:0.8s] [animation-delay:0.4s]" />
+            </div>
+        </div>
+    );
 }
 
 function OperationStateIndicator({ state, message }: { state: string; message: string }) {
-  const icons = {
-    reading: "📄",
-    extracting: "⚙️",
-    searching: "🔍",
-    confirming: "✓",
-  };
-  const icon = icons[state as keyof typeof icons] || "⏳";
+    const icons = {
+        reading: "📄",
+        extracting: "⚙️",
+        searching: "🔍",
+        confirming: "✓",
+    };
+    const icon = icons[state as keyof typeof icons] || "⏳";
 
-  return (
-    <div className="flex justify-start animate-pulse">
-      <div className="bg-[#13132a] border border-white/5 rounded-2xl rounded-tl-none px-4 py-3 flex gap-2 items-center backdrop-blur-md">
-        <span className="text-lg">{icon}</span>
-        <span className="text-[13px] text-[#8080a0]">{message}</span>
-      </div>
-    </div>
-  );
+    return (
+        <div className="flex justify-start animate-pulse">
+            <div className="bg-[#13132a] border border-white/5 rounded-2xl rounded-tl-none px-4 py-3 flex gap-2 items-center backdrop-blur-md">
+                <span className="text-lg">{icon}</span>
+                <span className="text-[13px] text-[#8080a0]">{message}</span>
+            </div>
+        </div>
+    );
 }
 
 function JobMatchCard({ match, onAction }: { match: JobMatch; onAction: (prompt: string) => void }) {
-  const score = match.score ?? 0;
-  const scoreLabel = score >= 0.8 ? "Strong match" : score >= 0.6 ? "Good match" : "Possible match";
-  const confidence = match.confidence || "medium";
+    const score = match.score ?? 0;
+    const scoreLabel = score >= 0.8 ? "Strong match" : score >= 0.6 ? "Good match" : "Possible match";
+    const confidence = match.confidence || "medium";
 
-  // Confidence badge styling with clear accessibility (colored text + border on dark background)
-  const getConfidenceBadge = () => {
-    const config = {
-      high: {
-        label: "High confidence fit",
-        bgColor: "bg-transparent",
-        textColor: "text-[#5dcaa5]",
-        borderColor: "border-[#5dcaa5]",
-        icon: "✓"
-      },
-      medium: {
-        label: "Medium confidence fit",
-        bgColor: "bg-transparent",
-        textColor: "text-[#facc15]",
-        borderColor: "border-[#facc15]",
-        icon: "○"
-      },
-      low: {
-        label: "Needs careful review",
-        bgColor: "bg-transparent",
-        textColor: "text-[#f87171]",
-        borderColor: "border-[#f87171]",
-        icon: "!"
-      }
+    // Confidence badge styling with clear accessibility (colored text + border on dark background)
+    const getConfidenceBadge = () => {
+        const config = {
+            high: {
+                label: "High confidence fit",
+                bgColor: "bg-transparent",
+                textColor: "text-[#5dcaa5]",
+                borderColor: "border-[#5dcaa5]",
+                icon: "✓"
+            },
+            medium: {
+                label: "Medium confidence fit",
+                bgColor: "bg-transparent",
+                textColor: "text-[#facc15]",
+                borderColor: "border-[#facc15]",
+                icon: "○"
+            },
+            low: {
+                label: "Needs careful review",
+                bgColor: "bg-transparent",
+                textColor: "text-[#f87171]",
+                borderColor: "border-[#f87171]",
+                icon: "!"
+            }
+        };
+        return config[confidence as keyof typeof config] || config.medium;
     };
-    return config[confidence as keyof typeof config] || config.medium;
-  };
 
-  const confidenceBadge = getConfidenceBadge();
+    const confidenceBadge = getConfidenceBadge();
 
-  return (
-    <article className="rounded-xl border border-white/8 bg-[#0f0f24] p-3 mb-2" aria-label={`Job match: ${match.title} at ${match.company}. ${scoreLabel}. ${confidenceBadge.label}.`}>
-      {/* Top row: title, company, score, confidence */}
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-semibold text-white">{match.title}</div>
-          <div className="text-[11px] text-[#8080a0]">{match.company}{match.location ? ` · ${match.location}` : ""}</div>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {score > 0 && (
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${score >= 0.8
-              ? "bg-[#5dcaa522] text-[#5dcaa5]"
-              : score >= 0.6
-                ? "bg-[#facc1522] text-[#facc15]"
-                : "bg-[#a78bfa22] text-[#a78bfa]"
-              }`}>
-              {scoreLabel}
-            </span>
-          )}
-          {/* Confidence badge with icon and label for accessibility */}
-          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1 ${confidenceBadge.bgColor} ${confidenceBadge.textColor} border ${confidenceBadge.borderColor} cursor-pointer`}>
-            <span aria-hidden="true">{confidenceBadge.icon}</span>
-            <span>{confidenceBadge.label}</span>
-          </span>
-        </div>
-      </div>
+    return (
+        <article className="rounded-xl border border-white/8 bg-[#0f0f24] p-3 mb-2" aria-label={`Job match: ${match.title} at ${match.company}. ${scoreLabel}. ${confidenceBadge.label}.`}>
+            {/* Top row: title, company, score, confidence */}
+            <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold text-white">{match.title}</div>
+                    <div className="text-[11px] text-[#8080a0]">{match.company}{match.location ? ` · ${match.location}` : ""}</div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                    {score > 0 && (
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${score >= 0.8
+                            ? "bg-[#5dcaa522] text-[#5dcaa5]"
+                            : score >= 0.6
+                                ? "bg-[#facc1522] text-[#facc15]"
+                                : "bg-[#a78bfa22] text-[#a78bfa]"
+                            }`}>
+                            {scoreLabel}
+                        </span>
+                    )}
+                    {/* Confidence badge with icon and label for accessibility */}
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1 ${confidenceBadge.bgColor} ${confidenceBadge.textColor} border ${confidenceBadge.borderColor} cursor-pointer`}>
+                        <span aria-hidden="true">{confidenceBadge.icon}</span>
+                        <span>{confidenceBadge.label}</span>
+                    </span>
+                </div>
+            </div>
 
-      {/* Why this fits - max 4 items for scan speed */}
-      {match.match_reasons && match.match_reasons.length > 0 && (
-        <section className="mb-2" aria-label="Why this job fits your profile">
-          <p className="text-[10px] font-semibold text-[#5dcaa5] mb-1">Why this fits:</p>
-          <ul className="text-[10px] text-[#8080a0] list-disc list-inside space-y-0.5">
-            {match.match_reasons.slice(0, 4).map((reason, idx) => (
-              <li key={idx}>{reason}</li>
-            ))}
-            {match.match_reasons.length > 4 && (
-              <li className="text-[9px] text-[#5a5a7a] italic">+{match.match_reasons.length - 4} more reasons</li>
+            {/* Why this fits - max 4 items for scan speed */}
+            {match.match_reasons && match.match_reasons.length > 0 && (
+                <section className="mb-2" aria-label="Why this job fits your profile">
+                    <p className="text-[10px] font-semibold text-[#5dcaa5] mb-1">Why this fits:</p>
+                    <ul className="text-[10px] text-[#8080a0] list-disc list-inside space-y-0.5">
+                        {match.match_reasons.slice(0, 4).map((reason, idx) => (
+                            <li key={idx}>{reason}</li>
+                        ))}
+                        {match.match_reasons.length > 4 && (
+                            <li className="text-[9px] text-[#5a5a7a] italic">+{match.match_reasons.length - 4} more reasons</li>
+                        )}
+                    </ul>
+                </section>
             )}
-          </ul>
-        </section>
-      )}
 
-      {/* Worth checking - max 3 items to prevent overwhelming */}
-      {match.match_concerns && match.match_concerns.length > 0 && (
-        <section className="mb-2" aria-label="Items worth checking about this job match">
-          <p className="text-[10px] font-semibold text-[#facc15] mb-1">Worth checking:</p>
-          <ul className="text-[10px] text-[#8080a0] list-disc list-inside space-y-0.5">
-            {match.match_concerns.slice(0, 3).map((concern, idx) => (
-              <li key={idx}>{concern}</li>
-            ))}
-            {match.match_concerns.length > 3 && (
-              <li className="text-[9px] text-[#5a5a7a] italic">+{match.match_concerns.length - 3} more</li>
+            {/* Worth checking - max 3 items to prevent overwhelming */}
+            {match.match_concerns && match.match_concerns.length > 0 && (
+                <section className="mb-2" aria-label="Items worth checking about this job match">
+                    <p className="text-[10px] font-semibold text-[#facc15] mb-1">Worth checking:</p>
+                    <ul className="text-[10px] text-[#8080a0] list-disc list-inside space-y-0.5">
+                        {match.match_concerns.slice(0, 3).map((concern, idx) => (
+                            <li key={idx}>{concern}</li>
+                        ))}
+                        {match.match_concerns.length > 3 && (
+                            <li className="text-[9px] text-[#5a5a7a] italic">+{match.match_concerns.length - 3} more</li>
+                        )}
+                    </ul>
+                </section>
             )}
-          </ul>
-        </section>
-      )}
 
-      {/* Missing facts - max 3 items for cognitive load */}
-      {match.missing_facts && match.missing_facts.length > 0 && (
-        <section className="mb-2" aria-label="Missing facts from job posting">
-          <p className="text-[10px] font-semibold text-[#a78bfa] mb-1">Missing facts:</p>
-          <ul className="text-[10px] text-[#8080a0] list-disc list-inside space-y-0.5">
-            {match.missing_facts.slice(0, 3).map((fact, idx) => (
-              <li key={idx}>{fact}</li>
-            ))}
-            {match.missing_facts.length > 3 && (
-              <li className="text-[9px] text-[#5a5a7a] italic">+{match.missing_facts.length - 3} more</li>
+            {/* Missing facts - max 3 items for cognitive load */}
+            {match.missing_facts && match.missing_facts.length > 0 && (
+                <section className="mb-2" aria-label="Missing facts from job posting">
+                    <p className="text-[10px] font-semibold text-[#a78bfa] mb-1">Missing facts:</p>
+                    <ul className="text-[10px] text-[#8080a0] list-disc list-inside space-y-0.5">
+                        {match.missing_facts.slice(0, 3).map((fact, idx) => (
+                            <li key={idx}>{fact}</li>
+                        ))}
+                        {match.missing_facts.length > 3 && (
+                            <li className="text-[9px] text-[#5a5a7a] italic">+{match.missing_facts.length - 3} more</li>
+                        )}
+                    </ul>
+                </section>
             )}
-          </ul>
-        </section>
-      )}
 
-      {/* Recommended action - max 2 lines for instant clarity */}
-      {match.recommended_action && (
-        <section className="mb-2 p-2 bg-white/5 rounded-lg border-l-2 border-[#5b4fff]" aria-label="Recommended next step">
-          <p className="text-[10px] font-semibold text-[#a78bfa] mb-0.5">Recommended next step:</p>
-          <p className="text-[10px] text-[#eeeef5] leading-relaxed line-clamp-2">{match.recommended_action}</p>
-        </section>
-      )}
+            {/* Recommended action - max 2 lines for instant clarity */}
+            {match.recommended_action && (
+                <section className="mb-2 p-2 bg-white/5 rounded-lg border-l-2 border-[#5b4fff]" aria-label="Recommended next step">
+                    <p className="text-[10px] font-semibold text-[#a78bfa] mb-0.5">Recommended next step:</p>
+                    <p className="text-[10px] text-[#eeeef5] leading-relaxed line-clamp-2">{match.recommended_action}</p>
+                </section>
+            )}
 
-      {/* Fallback to legacy why field */}
-      {!match.match_reasons && match.why && (
-        <p className="text-[11px] text-[#5a5a7a] mb-2 leading-relaxed">{match.why}</p>
-      )}
+            {/* Fallback to legacy why field */}
+            {!match.match_reasons && match.why && (
+                <p className="text-[11px] text-[#5a5a7a] mb-2 leading-relaxed">{match.why}</p>
+            )}
 
-      {/* Actions */}
-      {match.actions && match.actions.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {match.actions.map((action) => (
-            <button
-              key={action}
-              onClick={() => onAction(`${action} — ${match.title} at ${match.company}`)}
-              aria-label={`${action} for ${match.title} at ${match.company}`}
-              className="text-[10px] px-2.5 py-1 rounded-lg border border-white/10 text-[#8080a0] hover:border-[#5b4fff]/40 hover:text-white transition-colors"
-            >
-              {action}
-            </button>
-          ))}
-        </div>
-      )}
-    </article>
-  );
+            {/* Actions */}
+            {match.actions && match.actions.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                    {match.actions.map((action) => (
+                        <button
+                            key={action}
+                            onClick={() => onAction(`${action} — ${match.title} at ${match.company}`)}
+                            aria-label={`${action} for ${match.title} at ${match.company}`}
+                            className="text-[10px] px-2.5 py-1 rounded-lg border border-white/10 text-[#8080a0] hover:border-[#5b4fff]/40 hover:text-white transition-colors"
+                        >
+                            {action}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </article>
+    );
 }
 
 function OptionButtons({ options, onAction }: { options: RicoOption[]; onAction: (prompt: string) => void }) {
-  return (
-    <div className="flex flex-wrap gap-2 mt-2">
-      {options.map((opt) => (
-        <button
-          key={opt.action}
-          onClick={() => onAction(opt.message ?? opt.label)}
-          className="text-[12px] px-3 py-2 rounded-xl border border-[#5b4fff]/30 text-[#a78bfa] hover:bg-[#5b4fff]/10 hover:border-[#5b4fff]/60 transition-colors rico-focus-strong"
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
+    return (
+        <div className="flex flex-wrap gap-2 mt-2">
+            {options.map((opt) => (
+                <button
+                    key={opt.action}
+                    onClick={() => onAction(opt.message ?? opt.label)}
+                    className="text-[12px] px-3 py-2 rounded-xl border border-[#5b4fff]/30 text-[#a78bfa] hover:bg-[#5b4fff]/10 hover:border-[#5b4fff]/60 transition-colors rico-focus-strong"
+                >
+                    {opt.label}
+                </button>
+            ))}
+        </div>
+    );
 }
 
 export default function ChatPage() {
-  const router = useRouter();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [thinking, setThinking] = useState(false);
-  const [slowHint, setSlowHint] = useState(false);
-  const [sessionExpired, setSessionExpired] = useState(false);
-  const [uploadError, setUploadError] = useState("");
-  const [chatAudience, setChatAudience] = useState<ChatAudience>("checking");
-  const [mounted, setMounted] = useState(false);
-  const [operationState, setOperationState] = useState<{ state: string; message: string } | null>(null);
-  const [editingProfileId, setEditingProfileId] = useState<number | null>(null);
-  const [draftProfile, setDraftProfile] = useState<ProfilePreview | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const promptSentRef = useRef(false);
-  const sessionIdRef = useRef<string | null>(null);
+    const router = useRouter();
+    const [messages, setMessages] = useState<Message[]>([]);
+    const [input, setInput] = useState("");
+    const [thinking, setThinking] = useState(false);
+    const [slowHint, setSlowHint] = useState(false);
+    const [sessionExpired, setSessionExpired] = useState(false);
+    const [uploadError, setUploadError] = useState("");
+    const [chatAudience, setChatAudience] = useState<ChatAudience>("checking");
+    const [mounted, setMounted] = useState(false);
+    const [operationState, setOperationState] = useState<{ state: string; message: string } | null>(null);
+    const [editingProfileId, setEditingProfileId] = useState<number | null>(null);
+    const [draftProfile, setDraftProfile] = useState<ProfilePreview | null>(null);
+    const bottomRef = useRef<HTMLDivElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const promptSentRef = useRef(false);
+    const sessionIdRef = useRef<string | null>(null);
 
-  // Gate client-only logic to prevent hydration mismatch
-  useEffect(() => {
-    setMounted(true);
-    // Initialize session ID on client only
-    let sid = localStorage.getItem("rico_sid");
-    if (!sid) {
-      sid = "web-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9);
-      localStorage.setItem("rico_sid", sid);
-    }
-    sessionIdRef.current = sid;
-  }, []);
-
-  useEffect(() => {
-    const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
-    if (USE_MOCK) {
-      setChatAudience("authenticated");
-      return;
-    }
-
-    let cancelled = false;
-    const controller = new AbortController();
-    // Safety fallback: if fetchMe hangs (e.g. proxy/backend unreachable),
-    // force guest mode after 5 s so the UI never stays in "checking" forever.
-    const fallbackId = setTimeout(() => {
-      if (!cancelled) {
-        controller.abort();
-        setChatAudience("public");
-      }
-    }, 5000);
-
-    fetchMe(controller.signal)
-      .then((me) => {
-        if (cancelled) return;
-        clearTimeout(fallbackId);
-        setChatAudience(me.authenticated ? "authenticated" : "public");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        clearTimeout(fallbackId);
-        setChatAudience("public");
-      });
-
-    return () => {
-      cancelled = true;
-      clearTimeout(fallbackId);
-      controller.abort();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (chatAudience === "checking" || !mounted || typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const prompt = params.get("prompt");
-    if (prompt && !promptSentRef.current) {
-      promptSentRef.current = true;
-      sendMessage(prompt);
-    } else if (!promptSentRef.current) {
-      promptSentRef.current = true;
-      // Greet immediately
-      setMessages([{ id: 1, role: "rico", text: "Hi, I'm Rico. Tell me what UAE job you're looking for — role, city, and salary — and I'll find your best matches. You can also upload your CV and I'll set up your profile automatically." }]);
-    }
-  }, [chatAudience, mounted]);
-
-  function scrollBottom() {
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-  }
-
-  async function sendMessage(text: string) {
-    if (chatAudience === "checking") return;
-    if (text === "__cv_upload__") {
-      fileInputRef.current?.click();
-      return;
-    }
-    const trimmed = text.trim();
-    if (!trimmed || thinking) return;
-
-    setMessages((prev) => [...prev, { id: nextId(), role: "user", text: trimmed }]);
-    setThinking(true);
-    // Set operation state for job search if message indicates job search
-    if (trimmed.toLowerCase().includes("job") || trimmed.toLowerCase().includes("find") || trimmed.toLowerCase().includes("search")) {
-      setOperationState({ state: "searching", message: "Searching for jobs..." });
-    }
-    scrollBottom();
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 45_000);
-    const slowHintId = setTimeout(() => setSlowHint(true), 5_000);
-
-    try {
-      const res: ChatApiResponse =
-        chatAudience === "authenticated"
-          ? await sendChat(trimmed, controller.signal)
-          : await sendChatPublic(trimmed, getSessionId(sessionIdRef), controller.signal);
-      const reply =
-        res.response ??
-        res.reply ??
-        res.message ??
-        res.content ??
-        res.answer ??
-        res.data?.response ??
-        res.data?.reply ??
-        res.data?.message ??
-        res.data?.content ??
-        "";
-      const responseSource = res.response_source ?? "unknown";
-      const isRateLimited = responseSource === "rate_limited";
-      const hfMode = responseSource === "huggingface" || responseSource === "hf";
-      const deepseekMode = responseSource === "deepseek";
-      const freeMode =
-        isRateLimited ||
-        responseSource === "fallback" ||
-        responseSource === "none";
-
-      if (isRateLimited) {
-        setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Rico's AI is rate-limited right now — please try again in a minute.", freeMode: true }]);
-      } else if (!reply && !res.matches && !res.options) {
-        setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Rico returned an empty response. Please try again." }]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: nextId(),
-            role: "rico",
-            text: reply,
-            type: res.type,
-            matches: res.matches as JobMatch[] | undefined,
-            options: res.options as RicoOption[] | undefined,
-            next_action: res.next_action,
-            freeMode: freeMode && !hfMode,
-            roleName: res.role,
-            reasons: res.reasons,
-            next_actions: res.next_actions as NextAction[] | undefined,
-          },
-        ]);
-      }
-    } catch (err) {
-      if (err instanceof Error) {
-        if (err.name === "AbortError") {
-          setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Rico is taking longer than usual — the server may be waking up. Please try again in 30 seconds." }]);
-          return;
+    // Gate client-only logic to prevent hydration mismatch
+    useEffect(() => {
+        setMounted(true);
+        // Initialize session ID on client only
+        let sid = localStorage.getItem("rico_sid");
+        if (!sid) {
+            sid = "web-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9);
+            localStorage.setItem("rico_sid", sid);
         }
-        if (err.message.includes("401")) { setSessionExpired(true); return; }
-        if (err.name === "TypeError" || err.message === "Failed to fetch" || err.message.includes("network")) {
-          setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Could not reach Rico. Check your connection or try again." }]);
-          return;
+        sessionIdRef.current = sid;
+    }, []);
+
+    useEffect(() => {
+        const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
+        if (USE_MOCK) {
+            setChatAudience("authenticated");
+            return;
         }
-      }
-      setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Something went wrong. Please try again." }]);
-    } finally {
-      clearTimeout(timeoutId);
-      clearTimeout(slowHintId);
-      setSlowHint(false);
-      setThinking(false);
-      setOperationState(null);
-      scrollBottom();
-      textareaRef.current?.focus();
-    }
-  }
 
-  async function handleCVUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file || chatAudience === "checking") return;
-    e.target.value = "";
-    setUploadError("");
-    setMessages((prev) => [...prev, { id: nextId(), role: "user", text: `📎 Uploading CV: ${file.name}` }]);
-    setThinking(true);
-    setOperationState({ state: "reading", message: "Reading PDF file..." });
-    scrollBottom();
-    try {
-      const result: UploadCVResponse =
-        chatAudience === "authenticated"
-          ? await uploadCV(file)
-          : await uploadCV(file, `public:${getSessionId(sessionIdRef)}`);
-      // Store returned user_id for guest→auth merge later (client-only)
-      if (mounted && result.user_id && result.user_id.startsWith("public:")) {
-        localStorage.setItem("rico_public_uid", result.user_id);
-      }
+        let cancelled = false;
+        const controller = new AbortController();
+        // Safety fallback: if fetchMe hangs (e.g. proxy/backend unreachable),
+        // force guest mode after 5 s so the UI never stays in "checking" forever.
+        const fallbackId = setTimeout(() => {
+            if (!cancelled) {
+                controller.abort();
+                setChatAudience("public");
+            }
+        }, 5000);
 
-      // Check if document was rejected due to wrong type
-      if (result.ok === false && result.document_type) {
-        const text = result.message || `This document does not look like a CV/resume (detected as: ${result.document_type}). I did not update your personal job profile. Please upload a personal CV or resume.`;
-        setMessages((prev) => [...prev, { id: nextId(), role: "rico", text }]);
-        return;
-      }
+        fetchMe(controller.signal)
+            .then((me) => {
+                if (cancelled) return;
+                clearTimeout(fallbackId);
+                setChatAudience(me.authenticated ? "authenticated" : "public");
+            })
+            .catch(() => {
+                if (cancelled) return;
+                clearTimeout(fallbackId);
+                setChatAudience("public");
+            });
 
-      // Check if preview is ready for confirmation
-      if (result.status === "preview_ready" && result.preview) {
-        const preview = result.preview;
-        // Handle both new (skills_detected) and old (skills) response shapes
-        const skills = preview.skills_detected ?? preview.skills ?? [];
-        const previewText = (
-          `CV profile preview\n\n` +
-          `Name: ${preview.name || "—"}\n` +
-          `Email: ${preview.email || "—"}\n` +
-          `Phone: ${preview.phone || "—"}\n` +
-          `Current role: ${preview.current_role || "—"}\n` +
-          `Experience: ${preview.experience_years ? `~${preview.experience_years} years` : "—"}\n` +
-          `Skills: ${skills.slice(0, 6).join(", ") || "—"}\n` +
-          `Document quality: ${result.extraction_quality || "unknown"}\n\n` +
-          `Use this profile for job matching?`
-        );
-
-        const message: Message = {
-          id: nextId(),
-          role: "rico",
-          text: previewText,
-          type: "profile_preview",
-          preview: preview,
-          filename: result.filename,
-          extractionQuality: result.extraction_quality,
+        return () => {
+            cancelled = true;
+            clearTimeout(fallbackId);
+            controller.abort();
         };
-        setMessages((prev) => [...prev, message]);
-        return;
-      }
+    }, []);
 
-      // Fallback for old response format (shouldn't happen with new backend)
-      const p = result.parsed;
-      if (p) {
-        const skills = p.skills ?? [];
-        const summary = [
-          skills.length ? `Skills detected: ${skills.slice(0, 6).join(", ")}` : "",
-          p.emails?.length ? `Email: ${p.emails[0]}` : "",
-          p.phones?.length ? `Phone: ${p.phones[0]}` : "",
-          p.extracted_chars ? `Chars extracted: ${p.extracted_chars}` : "",
-        ].filter(Boolean).join(" · ");
-
-        let text: string;
-        if (p.extraction_quality === "poor") {
-          text = `CV received: ${file.name}, but I could not read enough text from the document. It may be scanned or image-based. Please upload a text-based PDF or DOCX for better extraction.`;
-        } else if (p.extraction_quality === "partial") {
-          text = `CV received: ${file.name}. I extracted the readable details and updated your profile.${summary ? `\n\n${summary}` : ""}\n\nTell me your target roles and I'll start finding matches.`;
-        } else {
-          text = `CV received: ${file.name}. I extracted your details and pre-filled your profile.${summary ? `\n\n${summary}` : ""}\n\nTell me your target roles and I'll start finding matches.`;
+    useEffect(() => {
+        if (chatAudience === "checking" || !mounted || typeof window === "undefined") return;
+        const params = new URLSearchParams(window.location.search);
+        const prompt = params.get("prompt");
+        if (prompt && !promptSentRef.current) {
+            promptSentRef.current = true;
+            sendMessage(prompt);
+        } else if (!promptSentRef.current) {
+            promptSentRef.current = true;
+            // Greet immediately
+            setMessages([{ id: 1, role: "rico", text: "Hi, I'm Rico. Tell me what UAE job you're looking for — role, city, and salary — and I'll find your best matches. You can also upload your CV and I'll set up your profile automatically." }]);
         }
-        setMessages((prev) => [...prev, { id: nextId(), role: "rico", text }]);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Upload failed";
-      setUploadError(msg);
-      setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: `Could not process CV: ${msg}. Please make sure it's a PDF under 10 MB.` }]);
-    } finally {
-      setThinking(false);
-      setOperationState(null);
-      scrollBottom();
-    }
-  }
+    }, [chatAudience, mounted]);
 
-  async function handleConfirmProfile(preview: ProfilePreview, filename: string, messageId: number) {
-    setThinking(true);
-    setOperationState({ state: "confirming", message: "Saving profile..." });
-    try {
-      const PROXY = "/proxy";
-      const userId = `public:${getSessionId(sessionIdRef)}`;
-      const res = await fetch(
-        `${PROXY}/api/v1/rico/confirm-cv-profile?${new URLSearchParams({ user_id: userId })}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ preview, filename }),
+    function scrollBottom() {
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    }
+
+    async function sendMessage(text: string) {
+        if (chatAudience === "checking") return;
+        if (text === "__cv_upload__") {
+            fileInputRef.current?.click();
+            return;
         }
-      );
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
-        throw new Error(body.detail ? String(body.detail) : `Confirm profile failed: ${res.status}`);
-      }
-      setMessages((prev) => prev.map(m => m.id === messageId ? { ...m, type: "profile_confirmed", text: "Profile confirmed. I can now use it for job matching. Tell me your target roles and I'll start finding matches." } : m));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Confirmation failed";
-      setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: `Could not confirm profile: ${msg}. Please try again.` }]);
-    } finally {
-      setThinking(false);
-      setOperationState(null);
-      scrollBottom();
+        const trimmed = text.trim();
+        if (!trimmed || thinking) return;
+
+        setMessages((prev) => [...prev, { id: nextId(), role: "user", text: trimmed }]);
+        setThinking(true);
+        // Set operation state for job search if message indicates job search
+        if (trimmed.toLowerCase().includes("job") || trimmed.toLowerCase().includes("find") || trimmed.toLowerCase().includes("search")) {
+            setOperationState({ state: "searching", message: "Searching for jobs..." });
+        }
+        scrollBottom();
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 45_000);
+        const slowHintId = setTimeout(() => setSlowHint(true), 5_000);
+
+        try {
+            const res: ChatApiResponse =
+                chatAudience === "authenticated"
+                    ? await sendChat(trimmed, controller.signal)
+                    : await sendChatPublic(trimmed, getSessionId(sessionIdRef), controller.signal);
+            const reply =
+                res.response ??
+                res.reply ??
+                res.message ??
+                res.content ??
+                res.answer ??
+                res.text ??
+                res.data?.response ??
+                res.data?.reply ??
+                res.data?.message ??
+                res.data?.content ??
+                res.data?.text ??
+                "";
+            const responseSource = res.response_source ?? "unknown";
+            const isRateLimited = responseSource === "rate_limited";
+            const hfMode = responseSource === "huggingface" || responseSource === "hf";
+            const deepseekMode = responseSource === "deepseek";
+            const freeMode =
+                isRateLimited ||
+                responseSource === "fallback" ||
+                responseSource === "none";
+
+            if (isRateLimited) {
+                setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Rico's AI is rate-limited right now — please try again in a minute.", freeMode: true }]);
+            } else if (!reply && !res.matches && !res.options) {
+                setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Rico returned an empty response. Please try again." }]);
+            } else {
+                setMessages((prev) => [
+                    ...prev,
+                    {
+                        id: nextId(),
+                        role: "rico",
+                        text: reply,
+                        type: res.type,
+                        matches: res.matches as JobMatch[] | undefined,
+                        options: res.options as RicoOption[] | undefined,
+                        next_action: res.next_action,
+                        freeMode: freeMode && !hfMode,
+                        roleName: res.role,
+                        reasons: res.reasons,
+                        next_actions: res.next_actions as NextAction[] | undefined,
+                    },
+                ]);
+            }
+        } catch (err) {
+            if (err instanceof Error) {
+                if (err.name === "AbortError") {
+                    setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Rico is taking longer than usual — the server may be waking up. Please try again in 30 seconds." }]);
+                    return;
+                }
+                if (err.message.includes("401")) { setSessionExpired(true); return; }
+                if (err.name === "TypeError" || err.message === "Failed to fetch" || err.message.includes("network")) {
+                    setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Could not reach Rico. Check your connection or try again." }]);
+                    return;
+                }
+            }
+            setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: "Something went wrong. Please try again." }]);
+        } finally {
+            clearTimeout(timeoutId);
+            clearTimeout(slowHintId);
+            setSlowHint(false);
+            setThinking(false);
+            setOperationState(null);
+            scrollBottom();
+            textareaRef.current?.focus();
+        }
     }
-  }
 
-  async function handleSend() {
-    const text = input.trim();
-    if (!text) return;
-    setInput("");
-    await sendMessage(text);
-  }
+    async function handleCVUpload(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        if (!file || chatAudience === "checking") return;
+        e.target.value = "";
+        setUploadError("");
+        setMessages((prev) => [...prev, { id: nextId(), role: "user", text: `📎 Uploading CV: ${file.name}` }]);
+        setThinking(true);
+        setOperationState({ state: "reading", message: "Reading PDF file..." });
+        scrollBottom();
+        try {
+            const result: UploadCVResponse =
+                chatAudience === "authenticated"
+                    ? await uploadCV(file)
+                    : await uploadCV(file, `public:${getSessionId(sessionIdRef)}`);
+            // Store returned user_id for guest→auth merge later (client-only)
+            if (mounted && result.user_id && result.user_id.startsWith("public:")) {
+                localStorage.setItem("rico_public_uid", result.user_id);
+            }
 
-  async function handleLogout() {
-    await logout();
-    router.push("/login");
-  }
+            // Check if document was rejected due to wrong type
+            if (result.ok === false && result.document_type) {
+                const text = result.message || `This document does not look like a CV/resume (detected as: ${result.document_type}). I did not update your personal job profile. Please upload a personal CV or resume.`;
+                setMessages((prev) => [...prev, { id: nextId(), role: "rico", text }]);
+                return;
+            }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+            // Check if preview is ready for confirmation
+            if (result.status === "preview_ready" && result.preview) {
+                const preview = result.preview;
+                // Handle both new (skills_detected) and old (skills) response shapes
+                const skills = preview.skills_detected ?? preview.skills ?? [];
+                const previewText = (
+                    `CV profile preview\n\n` +
+                    `Name: ${preview.name || "—"}\n` +
+                    `Email: ${preview.email || "—"}\n` +
+                    `Phone: ${preview.phone || "—"}\n` +
+                    `Current role: ${preview.current_role || "—"}\n` +
+                    `Experience: ${preview.experience_years ? `~${preview.experience_years} years` : "—"}\n` +
+                    `Skills: ${skills.slice(0, 6).join(", ") || "—"}\n` +
+                    `Document quality: ${result.extraction_quality || "unknown"}\n\n` +
+                    `Use this profile for job matching?`
+                );
+
+                const message: Message = {
+                    id: nextId(),
+                    role: "rico",
+                    text: previewText,
+                    type: "profile_preview",
+                    preview: preview,
+                    filename: result.filename,
+                    extractionQuality: result.extraction_quality,
+                };
+                setMessages((prev) => [...prev, message]);
+                return;
+            }
+
+            // Fallback for old response format (shouldn't happen with new backend)
+            const p = result.parsed;
+            if (p) {
+                const skills = p.skills ?? [];
+                const summary = [
+                    skills.length ? `Skills detected: ${skills.slice(0, 6).join(", ")}` : "",
+                    p.emails?.length ? `Email: ${p.emails[0]}` : "",
+                    p.phones?.length ? `Phone: ${p.phones[0]}` : "",
+                    p.extracted_chars ? `Chars extracted: ${p.extracted_chars}` : "",
+                ].filter(Boolean).join(" · ");
+
+                let text: string;
+                if (p.extraction_quality === "poor") {
+                    text = `CV received: ${file.name}, but I could not read enough text from the document. It may be scanned or image-based. Please upload a text-based PDF or DOCX for better extraction.`;
+                } else if (p.extraction_quality === "partial") {
+                    text = `CV received: ${file.name}. I extracted the readable details and updated your profile.${summary ? `\n\n${summary}` : ""}\n\nTell me your target roles and I'll start finding matches.`;
+                } else {
+                    text = `CV received: ${file.name}. I extracted your details and pre-filled your profile.${summary ? `\n\n${summary}` : ""}\n\nTell me your target roles and I'll start finding matches.`;
+                }
+                setMessages((prev) => [...prev, { id: nextId(), role: "rico", text }]);
+            }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "Upload failed";
+            setUploadError(msg);
+            setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: `Could not process CV: ${msg}. Please make sure it's a PDF under 10 MB.` }]);
+        } finally {
+            setThinking(false);
+            setOperationState(null);
+            scrollBottom();
+        }
     }
-  }
 
-  if (sessionExpired) {
+    async function handleConfirmProfile(preview: ProfilePreview, filename: string, messageId: number) {
+        setThinking(true);
+        setOperationState({ state: "confirming", message: "Saving profile..." });
+        try {
+            const PROXY = "/proxy";
+            const userId = `public:${getSessionId(sessionIdRef)}`;
+            const res = await fetch(
+                `${PROXY}/api/v1/rico/confirm-cv-profile?${new URLSearchParams({ user_id: userId })}`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({ preview, filename }),
+                }
+            );
+            if (!res.ok) {
+                const body = (await res.json().catch(() => ({}))) as { detail?: unknown };
+                throw new Error(body.detail ? String(body.detail) : `Confirm profile failed: ${res.status}`);
+            }
+            setMessages((prev) => prev.map(m => m.id === messageId ? { ...m, type: "profile_confirmed", text: "Profile confirmed. I can now use it for job matching. Tell me your target roles and I'll start finding matches." } : m));
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "Confirmation failed";
+            setMessages((prev) => [...prev, { id: nextId(), role: "rico", text: `Could not confirm profile: ${msg}. Please try again.` }]);
+        } finally {
+            setThinking(false);
+            setOperationState(null);
+            scrollBottom();
+        }
+    }
+
+    async function handleSend() {
+        const text = input.trim();
+        if (!text) return;
+        setInput("");
+        await sendMessage(text);
+    }
+
+    async function handleLogout() {
+        await logout();
+        router.push("/login");
+    }
+
+    function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSend();
+        }
+    }
+
+    if (sessionExpired) {
+        return (
+            <div className="min-h-screen bg-[#06060f] flex items-center justify-center">
+                <div className="flex max-w-lg flex-col items-center gap-4 rounded-2xl border border-white/5 bg-[#13132a]/80 p-8 text-center backdrop-blur-md">
+                    <p className="text-sm font-medium text-[#eeeef5]">Session expired.</p>
+                    <p className="text-sm text-[#5a5a7a]">Sign in again to continue chatting with Rico.</p>
+                    <Link href={CHAT_LOGIN_HREF} className="rounded-lg bg-[#5b4fff] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#4a3fe0]">
+                        Sign in
+                    </Link>
+                </div>
+            </div>
+        );
+    }
+
     return (
-      <div className="min-h-screen bg-[#06060f] flex items-center justify-center">
-        <div className="flex max-w-lg flex-col items-center gap-4 rounded-2xl border border-white/5 bg-[#13132a]/80 p-8 text-center backdrop-blur-md">
-          <p className="text-sm font-medium text-[#eeeef5]">Session expired.</p>
-          <p className="text-sm text-[#5a5a7a]">Sign in again to continue chatting with Rico.</p>
-          <Link href={CHAT_LOGIN_HREF} className="rounded-lg bg-[#5b4fff] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#4a3fe0]">
-            Sign in
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-[#06060f] flex flex-col relative overflow-hidden">
-      {/* Ambient glows matching landing page */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute -top-[250px] -left-[150px] w-[700px] h-[700px] rounded-full bg-[rgba(91,79,255,0.06)] blur-[140px]" />
-        <div className="absolute bottom-0 -right-[100px] w-[500px] h-[500px] rounded-full bg-[rgba(0,201,167,0.04)] blur-[140px]" />
-      </div>
-
-      {/* Top nav — minimal, matches landing */}
-      <header className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-white/[0.05]">
-        <Link href="/" className="flex items-center gap-2 text-white font-black text-lg tracking-tight">
-          <div className="w-8 h-8 rounded-[9px] bg-gradient-to-br from-[#5b4fff] to-[#8b5cf6] flex items-center justify-center text-sm font-black shadow-[0_4px_16px_rgba(91,79,255,0.3)]">R</div>
-          Rico<span className="text-[#5b4fff]">.ai</span>
-        </Link>
-        <div className="flex items-center gap-3">
-          {chatAudience === "authenticated" ? (
-            <>
-              <Link href="/dashboard" className="text-[13px] text-[#5a5a7a] hover:text-white transition-colors">Dashboard</Link>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="text-[12px] px-3 py-1.5 rounded-lg bg-[#5b4fff] text-white hover:bg-[#4a3fdf] transition-colors font-medium"
-              >
-                Sign out
-              </button>
-            </>
-          ) : (
-            <>
-              <Link href={CHAT_LOGIN_HREF} className="text-[13px] text-[#5a5a7a] hover:text-white transition-colors">Sign in</Link>
-              <Link href={CHAT_SIGNUP_HREF} className="text-[12px] px-3 py-1.5 rounded-lg bg-[#5b4fff] text-white hover:bg-[#4a3fdf] transition-colors font-medium">Sign up free</Link>
-            </>
-          )}
-        </div>
-      </header>
-
-      {/* Hidden file input for CV upload */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pdf"
-        aria-label="Upload CV PDF"
-        title="Upload CV PDF"
-        className="hidden"
-        onChange={handleCVUpload}
-      />
-
-      <div className="relative z-10 flex flex-col flex-1 h-[calc(100vh-65px)] max-w-3xl w-full mx-auto px-4">
-        {/* Messages Container */}
-        <div className="flex-1 overflow-y-auto px-2 py-6 space-y-5 pb-32" role="log" aria-live="polite" aria-atomic="false">
-
-          {/* Quick start (shown above first message) */}
-          {messages.length <= 1 && !thinking && (
-            <div className="flex flex-wrap justify-center gap-2 pb-4">
-              {QUICK_ACTIONS.map((qa) => (
-                <button
-                  key={qa.label}
-                  onClick={() => sendMessage(qa.prompt)}
-                  disabled={thinking || chatAudience === "checking"}
-                  className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-xs text-[#8080a0] transition-colors hover:border-[rgba(91,79,255,0.3)] hover:bg-white/[0.05] hover:text-[#eeeef5] disabled:opacity-50 rico-focus-strong"
-                >
-                  {qa.label}
-                </button>
-              ))}
+        <div className="min-h-screen bg-[#06060f] flex flex-col relative overflow-hidden">
+            {/* Ambient glows matching landing page */}
+            <div className="fixed inset-0 pointer-events-none z-0">
+                <div className="absolute -top-[250px] -left-[150px] w-[700px] h-[700px] rounded-full bg-[rgba(91,79,255,0.06)] blur-[140px]" />
+                <div className="absolute bottom-0 -right-[100px] w-[500px] h-[500px] rounded-full bg-[rgba(0,201,167,0.04)] blur-[140px]" />
             </div>
-          )}
 
-          {/* Messages */}
-          {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`flex items-end gap-2 animate-in fade-in slide-in-from-bottom-2 ${m.role === "user" ? "justify-end" : "justify-start"
-                }`}
-            >
-              {m.role === "rico" && (
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#5b4fff] to-[#8b5cf6] flex items-center justify-center text-[11px] font-black text-white shrink-0 mb-1 shadow-[0_2px_8px_rgba(91,79,255,0.3)]">
-                  R
+            {/* Top nav — minimal, matches landing */}
+            <header className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-white/[0.05]">
+                <Link href="/" className="flex items-center gap-2 text-white font-black text-lg tracking-tight">
+                    <div className="w-8 h-8 rounded-[9px] bg-gradient-to-br from-[#5b4fff] to-[#8b5cf6] flex items-center justify-center text-sm font-black shadow-[0_4px_16px_rgba(91,79,255,0.3)]">R</div>
+                    Rico<span className="text-[#5b4fff]">.ai</span>
+                </Link>
+                <div className="flex items-center gap-3">
+                    {chatAudience === "authenticated" ? (
+                        <>
+                            <Link href="/dashboard" className="text-[13px] text-[#5a5a7a] hover:text-white transition-colors">Dashboard</Link>
+                            <button
+                                type="button"
+                                onClick={handleLogout}
+                                className="text-[12px] px-3 py-1.5 rounded-lg bg-[#5b4fff] text-white hover:bg-[#4a3fdf] transition-colors font-medium"
+                            >
+                                Sign out
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <Link href={CHAT_LOGIN_HREF} className="text-[13px] text-[#5a5a7a] hover:text-white transition-colors">Sign in</Link>
+                            <Link href={CHAT_SIGNUP_HREF} className="text-[12px] px-3 py-1.5 rounded-lg bg-[#5b4fff] text-white hover:bg-[#4a3fdf] transition-colors font-medium">Sign up free</Link>
+                        </>
+                    )}
                 </div>
-              )}
-              <div className={`max-w-[82%] ${m.role === "user"
-                ? "rounded-2xl rounded-tr-none bg-[#5b4fff] px-4 py-3 text-[14px] text-white leading-relaxed shadow-[0_4px_15px_rgba(91,79,255,0.2)]"
-                : "rounded-2xl rounded-tl-none bg-[#13132a] border border-white/5 px-4 py-3 text-[14px] text-[#eeeef5] leading-relaxed backdrop-blur-md"
-                }`}>
-                {/* Message text */}
-                {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
+            </header>
 
-                {/* Job match cards */}
-                {m.matches && m.matches.length > 0 && (
-                  <div className="mt-3">
-                    {m.matches.map((match, i) => (
-                      <JobMatchCard key={i} match={match} onAction={(prompt) => sendMessage(prompt)} />
+            {/* Hidden file input for CV upload */}
+            <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf"
+                aria-label="Upload CV PDF"
+                title="Upload CV PDF"
+                className="hidden"
+                onChange={handleCVUpload}
+            />
+
+            <div className="relative z-10 flex flex-col flex-1 h-[calc(100vh-65px)] max-w-3xl w-full mx-auto px-4">
+                {/* Messages Container */}
+                <div className="flex-1 overflow-y-auto px-2 py-6 space-y-5 pb-32" role="log" aria-live="polite" aria-atomic="false">
+
+                    {/* Quick start (shown above first message) */}
+                    {messages.length <= 1 && !thinking && (
+                        <div className="flex flex-wrap justify-center gap-2 pb-4">
+                            {QUICK_ACTIONS.map((qa) => (
+                                <button
+                                    key={qa.label}
+                                    onClick={() => sendMessage(qa.prompt)}
+                                    disabled={thinking || chatAudience === "checking"}
+                                    className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2 text-xs text-[#8080a0] transition-colors hover:border-[rgba(91,79,255,0.3)] hover:bg-white/[0.05] hover:text-[#eeeef5] disabled:opacity-50 rico-focus-strong"
+                                >
+                                    {qa.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Messages */}
+                    {messages.map((m) => (
+                        <div
+                            key={m.id}
+                            className={`flex items-end gap-2 animate-in fade-in slide-in-from-bottom-2 ${m.role === "user" ? "justify-end" : "justify-start"
+                                }`}
+                        >
+                            {m.role === "rico" && (
+                                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#5b4fff] to-[#8b5cf6] flex items-center justify-center text-[11px] font-black text-white shrink-0 mb-1 shadow-[0_2px_8px_rgba(91,79,255,0.3)]">
+                                    R
+                                </div>
+                            )}
+                            <div className={`max-w-[82%] ${m.role === "user"
+                                ? "rounded-2xl rounded-tr-none bg-[#5b4fff] px-4 py-3 text-[14px] text-white leading-relaxed shadow-[0_4px_15px_rgba(91,79,255,0.2)]"
+                                : "rounded-2xl rounded-tl-none bg-[#13132a] border border-white/5 px-4 py-3 text-[14px] text-[#eeeef5] leading-relaxed backdrop-blur-md"
+                                }`}>
+                                {/* Message text */}
+                                {m.text && <div className="whitespace-pre-wrap">{m.text}</div>}
+
+                                {/* Job match cards */}
+                                {m.matches && m.matches.length > 0 && (
+                                    <div className="mt-3">
+                                        {m.matches.map((match, i) => (
+                                            <JobMatchCard key={i} match={match} onAction={(prompt) => sendMessage(prompt)} />
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Profile preview confirmation buttons */}
+                                {m.type === "profile_preview" && m.preview && m.filename && editingProfileId !== m.id && (
+                                    <div className="mt-3 flex gap-2">
+                                        <button
+                                            onClick={() => handleConfirmProfile(m.preview!, m.filename!, m.id)}
+                                            disabled={thinking}
+                                            className="text-[12px] px-4 py-2 rounded-lg bg-[#5dcaa5] text-white font-medium hover:bg-[#4db894] transition-colors disabled:opacity-50"
+                                        >
+                                            Use this profile
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setEditingProfileId(m.id);
+                                                setDraftProfile(m.preview!);
+                                            }}
+                                            disabled={thinking}
+                                            className="text-[12px] px-4 py-2 rounded-lg border border-white/10 text-[#8080a0] hover:border-[#5b4fff]/40 hover:text-white transition-colors disabled:opacity-50"
+                                        >
+                                            Edit before saving
+                                        </button>
+                                    </div>
+                                )}
+                                {m.type === "profile_preview" && editingProfileId === m.id && draftProfile && (
+                                    <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+                                        <p className="text-[11px] font-semibold text-[#a78bfa]">Edit profile</p>
+
+                                        {(
+                                            [
+                                                ["name", "Name"],
+                                                ["current_role", "Current role"],
+                                                ["email", "Email"],
+                                                ["phone", "Phone"],
+                                            ] as [keyof ProfilePreview, string][]
+                                        ).map(([field, label]) => (
+                                            <label key={field} className="block space-y-0.5">
+                                                <span className="text-[10px] text-[#5a5a7a]">{label}</span>
+                                                <input
+                                                    value={(draftProfile[field] as string) ?? ""}
+                                                    onChange={(e) =>
+                                                        setDraftProfile((prev) => (prev ? { ...prev, [field]: e.target.value } : prev))
+                                                    }
+                                                    className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[12px] text-white placeholder:text-[#5a5a7a] focus:outline-none focus:border-[#5b4fff]/60"
+                                                />
+                                            </label>
+                                        ))}
+
+                                        <label className="block space-y-0.5">
+                                            <span className="text-[10px] text-[#5a5a7a]">Skills (comma-separated)</span>
+                                            <input
+                                                value={(draftProfile.skills_detected ?? draftProfile.skills ?? []).join(", ")}
+                                                onChange={(e) => {
+                                                    const skills = e.target.value.split(",").map((skill) => skill.trim()).filter(Boolean);
+                                                    setDraftProfile((prev) =>
+                                                        prev ? { ...prev, skills_detected: skills, skills } : prev
+                                                    );
+                                                }}
+                                                className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[12px] text-white placeholder:text-[#5a5a7a] focus:outline-none focus:border-[#5b4fff]/60"
+                                            />
+                                        </label>
+
+                                        <div className="flex gap-2 pt-1">
+                                            <button
+                                                onClick={() => {
+                                                    handleConfirmProfile(draftProfile, m.filename!, m.id);
+                                                    setEditingProfileId(null);
+                                                    setDraftProfile(null);
+                                                }}
+                                                disabled={thinking}
+                                                className="text-[12px] px-4 py-2 rounded-lg bg-[#5dcaa5] text-white font-medium hover:bg-[#4db894] transition-colors disabled:opacity-50"
+                                            >
+                                                Save profile
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setEditingProfileId(null);
+                                                    setDraftProfile(null);
+                                                }}
+                                                className="text-[12px] px-4 py-2 rounded-lg border border-white/10 text-[#8080a0] hover:border-[#5b4fff]/40 hover:text-white transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                                {m.options && m.options.length > 0 && (
+                                    <OptionButtons options={m.options} onAction={(prompt) => sendMessage(prompt)} />
+                                )}
+
+                                {/* Role confirmation reasons + next_actions */}
+                                {m.type === "role_confirmation" && (
+                                    <div className="mt-3 space-y-2">
+                                        {m.reasons && m.reasons.length > 0 && (
+                                            <ul className="list-disc list-inside text-[13px] text-[#a0a0c0] space-y-0.5">
+                                                {m.reasons.map((r, i) => (
+                                                    <li key={i}>{r}</li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                        {m.next_actions && m.next_actions.length > 0 && (
+                                            <div className="flex flex-wrap gap-2 pt-1">
+                                                {m.next_actions.map((na) => (
+                                                    <button
+                                                        key={na.action}
+                                                        onClick={() => sendMessage(na.message ?? na.label)}
+                                                        className="text-[12px] px-3 py-2 rounded-xl border border-[#5b4fff]/30 text-[#a78bfa] hover:bg-[#5b4fff]/10 hover:border-[#5b4fff]/60 transition-colors rico-focus-strong"
+                                                    >
+                                                        {na.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {m.freeMode && (
+                                    <p className="mt-2 text-[11px] text-[#5a5a7a]">Free mode — HF fallback active</p>
+                                )}
+                            </div>
+                            {m.role === "user" && (
+                                <div className="w-6 h-6 rounded-full bg-white/[0.08] flex items-center justify-center text-[10px] font-medium text-[#8080a0] shrink-0 mb-1">
+                                    You
+                                </div>
+                            )}
+                        </div>
                     ))}
-                  </div>
-                )}
 
-                {/* Profile preview confirmation buttons */}
-                {m.type === "profile_preview" && m.preview && m.filename && editingProfileId !== m.id && (
-                  <div className="mt-3 flex gap-2">
-                    <button
-                      onClick={() => handleConfirmProfile(m.preview!, m.filename!, m.id)}
-                      disabled={thinking}
-                      className="text-[12px] px-4 py-2 rounded-lg bg-[#5dcaa5] text-white font-medium hover:bg-[#4db894] transition-colors disabled:opacity-50"
-                    >
-                      Use this profile
-                    </button>
-                    <button
-                      onClick={() => {
-                        setEditingProfileId(m.id);
-                        setDraftProfile(m.preview!);
-                      }}
-                      disabled={thinking}
-                      className="text-[12px] px-4 py-2 rounded-lg border border-white/10 text-[#8080a0] hover:border-[#5b4fff]/40 hover:text-white transition-colors disabled:opacity-50"
-                    >
-                      Edit before saving
-                    </button>
-                  </div>
-                )}
-                {m.type === "profile_preview" && editingProfileId === m.id && draftProfile && (
-                  <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
-                    <p className="text-[11px] font-semibold text-[#a78bfa]">Edit profile</p>
+                    {thinking && (
+                        <div className="flex flex-col gap-2">
+                            {operationState ? (
+                                <OperationStateIndicator state={operationState.state} message={operationState.message} />
+                            ) : (
+                                <ThinkingIndicator />
+                            )}
+                            {slowHint && (
+                                <p className="text-[11px] text-[#5a5a7a] pl-9 animate-pulse">
+                                    Rico is waking up — first request after idle can take up to a minute…
+                                </p>
+                            )}
+                        </div>
+                    )}
 
-                    {(
-                      [
-                        ["name", "Name"],
-                        ["current_role", "Current role"],
-                        ["email", "Email"],
-                        ["phone", "Phone"],
-                      ] as [keyof ProfilePreview, string][]
-                    ).map(([field, label]) => (
-                      <label key={field} className="block space-y-0.5">
-                        <span className="text-[10px] text-[#5a5a7a]">{label}</span>
-                        <input
-                          value={(draftProfile[field] as string) ?? ""}
-                          onChange={(e) =>
-                            setDraftProfile((prev) => (prev ? { ...prev, [field]: e.target.value } : prev))
-                          }
-                          className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[12px] text-white placeholder:text-[#5a5a7a] focus:outline-none focus:border-[#5b4fff]/60"
-                        />
-                      </label>
-                    ))}
+                    <div ref={bottomRef} />
+                </div>
 
-                    <label className="block space-y-0.5">
-                      <span className="text-[10px] text-[#5a5a7a]">Skills (comma-separated)</span>
-                      <input
-                        value={(draftProfile.skills_detected ?? draftProfile.skills ?? []).join(", ")}
-                        onChange={(e) => {
-                          const skills = e.target.value.split(",").map((skill) => skill.trim()).filter(Boolean);
-                          setDraftProfile((prev) =>
-                            prev ? { ...prev, skills_detected: skills, skills } : prev
-                          );
-                        }}
-                        className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[12px] text-white placeholder:text-[#5a5a7a] focus:outline-none focus:border-[#5b4fff]/60"
-                      />
-                    </label>
+                {/* Floating input bar */}
+                <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#06060f] via-[#06060f]/95 to-transparent">
+                    {uploadError && (
+                        <p className="text-[11px] text-red-400 mb-2 text-center">{uploadError}</p>
+                    )}
+                    <div className="flex items-end gap-2">
+                        {/* CV upload button */}
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={thinking || chatAudience === "checking"}
+                            title="Upload your CV (PDF)"
+                            className="w-10 h-10 rounded-xl border border-white/10 bg-[#13132a]/80 text-[#8080a0] flex items-center justify-center hover:border-[#5b4fff]/40 hover:text-white transition-all disabled:opacity-30 shrink-0 rico-focus-strong"
+                            aria-label="Upload CV"
+                        >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                            </svg>
+                        </button>
 
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        onClick={() => {
-                          handleConfirmProfile(draftProfile, m.filename!, m.id);
-                          setEditingProfileId(null);
-                          setDraftProfile(null);
-                        }}
-                        disabled={thinking}
-                        className="text-[12px] px-4 py-2 rounded-lg bg-[#5dcaa5] text-white font-medium hover:bg-[#4db894] transition-colors disabled:opacity-50"
-                      >
-                        Save profile
-                      </button>
-                      <button
-                        onClick={() => {
-                          setEditingProfileId(null);
-                          setDraftProfile(null);
-                        }}
-                        className="text-[12px] px-4 py-2 rounded-lg border border-white/10 text-[#8080a0] hover:border-[#5b4fff]/40 hover:text-white transition-colors"
-                      >
-                        Cancel
-                      </button>
+                        {/* Text input */}
+                        <div className="relative flex-1">
+                            <textarea
+                                ref={textareaRef}
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                disabled={thinking || chatAudience === "checking"}
+                                rows={1}
+                                placeholder={chatAudience === "checking"
+                                    ? "Checking your session…"
+                                    : "Ask Rico anything — jobs, CV, applications, interviews…"}
+                                className="w-full resize-none bg-[#13132a]/80 border border-white/10 backdrop-blur-xl rounded-2xl py-3 pl-4 pr-12 text-sm text-white placeholder:text-[#5a5a7a] transition-all shadow-2xl"
+                            />
+                            <button
+                                onClick={handleSend}
+                                disabled={thinking || chatAudience === "checking" || !input.trim()}
+                                className="absolute right-2 top-1.5 bottom-1.5 w-9 h-9 rounded-xl bg-[#5b4fff] text-white flex items-center justify-center hover:bg-[#4a3fdf] transition-all disabled:opacity-30 disabled:grayscale rico-focus-strong"
+                                aria-label={thinking ? "Sending…" : "Send"}
+                            >
+                                {thinking ? (
+                                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                ) : (
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                                    </svg>
+                                )}
+                            </button>
+                        </div>
                     </div>
-                  </div>
-                )}
-                {m.options && m.options.length > 0 && (
-                  <OptionButtons options={m.options} onAction={(prompt) => sendMessage(prompt)} />
-                )}
-
-                {/* Role confirmation reasons + next_actions */}
-                {m.type === "role_confirmation" && (
-                  <div className="mt-3 space-y-2">
-                    {m.reasons && m.reasons.length > 0 && (
-                      <ul className="list-disc list-inside text-[13px] text-[#a0a0c0] space-y-0.5">
-                        {m.reasons.map((r, i) => (
-                          <li key={i}>{r}</li>
-                        ))}
-                      </ul>
-                    )}
-                    {m.next_actions && m.next_actions.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        {m.next_actions.map((na) => (
-                          <button
-                            key={na.action}
-                            onClick={() => sendMessage(na.message ?? na.label)}
-                            className="text-[12px] px-3 py-2 rounded-xl border border-[#5b4fff]/30 text-[#a78bfa] hover:bg-[#5b4fff]/10 hover:border-[#5b4fff]/60 transition-colors rico-focus-strong"
-                          >
-                            {na.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {m.freeMode && (
-                  <p className="mt-2 text-[11px] text-[#5a5a7a]">Free mode — HF fallback active</p>
-                )}
-              </div>
-              {m.role === "user" && (
-                <div className="w-6 h-6 rounded-full bg-white/[0.08] flex items-center justify-center text-[10px] font-medium text-[#8080a0] shrink-0 mb-1">
-                  You
+                    <p className="text-center text-[10px] text-[#5a5a7a] mt-2 opacity-40">
+                        Enter to send · Shift+Enter for new line · 📎 to upload CV
+                    </p>
                 </div>
-              )}
             </div>
-          ))}
-
-          {thinking && (
-            <div className="flex flex-col gap-2">
-              {operationState ? (
-                <OperationStateIndicator state={operationState.state} message={operationState.message} />
-              ) : (
-                <ThinkingIndicator />
-              )}
-              {slowHint && (
-                <p className="text-[11px] text-[#5a5a7a] pl-9 animate-pulse">
-                  Rico is waking up — first request after idle can take up to a minute…
-                </p>
-              )}
-            </div>
-          )}
-
-          <div ref={bottomRef} />
         </div>
-
-        {/* Floating input bar */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#06060f] via-[#06060f]/95 to-transparent">
-          {uploadError && (
-            <p className="text-[11px] text-red-400 mb-2 text-center">{uploadError}</p>
-          )}
-          <div className="flex items-end gap-2">
-            {/* CV upload button */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={thinking || chatAudience === "checking"}
-              title="Upload your CV (PDF)"
-              className="w-10 h-10 rounded-xl border border-white/10 bg-[#13132a]/80 text-[#8080a0] flex items-center justify-center hover:border-[#5b4fff]/40 hover:text-white transition-all disabled:opacity-30 shrink-0 rico-focus-strong"
-              aria-label="Upload CV"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-              </svg>
-            </button>
-
-            {/* Text input */}
-            <div className="relative flex-1">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={thinking || chatAudience === "checking"}
-                rows={1}
-                placeholder={chatAudience === "checking"
-                  ? "Checking your session…"
-                  : "Ask Rico anything — jobs, CV, applications, interviews…"}
-                className="w-full resize-none bg-[#13132a]/80 border border-white/10 backdrop-blur-xl rounded-2xl py-3 pl-4 pr-12 text-sm text-white placeholder:text-[#5a5a7a] transition-all shadow-2xl"
-              />
-              <button
-                onClick={handleSend}
-                disabled={thinking || chatAudience === "checking" || !input.trim()}
-                className="absolute right-2 top-1.5 bottom-1.5 w-9 h-9 rounded-xl bg-[#5b4fff] text-white flex items-center justify-center hover:bg-[#4a3fdf] transition-all disabled:opacity-30 disabled:grayscale rico-focus-strong"
-                aria-label={thinking ? "Sending…" : "Send"}
-              >
-                {thinking ? (
-                  <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
-                  </svg>
-                )}
-              </button>
-            </div>
-          </div>
-          <p className="text-center text-[10px] text-[#5a5a7a] mt-2 opacity-40">
-            Enter to send · Shift+Enter for new line · 📎 to upload CV
-          </p>
-        </div>
-      </div>
-    </div>
-  );
+    );
 }
