@@ -19,7 +19,7 @@ from typing import Any, NamedTuple
 # Standard library imports first
 # Third-party imports (none currently)
 # Local imports
-from src.agent.intelligence.intent_classifier import classify_intent, IntentResult
+from src.agent.intelligence.intent_classifier import classify_intent
 from src.agent.intelligence.normalizer import normalize_role
 from src.agent.intelligence.recommender import recommend_adjacent_roles
 from src.agent.intelligence.role_classifier import classify_role_candidate
@@ -76,7 +76,6 @@ _NON_ROLE_STARTERS: frozenset[str] = frozenset({
 _QUESTION_CHARS: frozenset[str] = frozenset("?？!！;:")
 _MAX_ROLE_WORDS: int = 6
 _MIN_TOKEN_ALPHA: int = 2
-
 
 def generate_error_ref() -> str:
     """Generate a unique error reference ID for tracking and support lookup."""
@@ -930,6 +929,91 @@ class RicoChatAPI:
                 user_id=user_id,
             )
 
+    def _answer_with_ai_fallback(
+        self,
+        user_id: str,
+        message: str,
+        profile: Any,
+        *,
+        save_user_message: bool,
+    ) -> dict[str, Any]:
+        """Run the single conversational AI fallback path used by chat routing."""
+        if save_user_message:
+            self._append_chat(user_id, "user", message)
+        user_context = self._build_openai_context(profile)
+        blocked_questions = self._get_blocked_questions(profile)
+        if isinstance(user_context, dict):
+            user_context["blocked_questions"] = blocked_questions
+
+        ai_response = self._get_openai_agent().respond(message, user_context=user_context)
+        raw_ai_message = ai_response.get("message", "")
+        filtered_ai_message = self._preserve_ai_message(raw_ai_message, blocked_questions)
+        ai_response["message"] = filtered_ai_message
+
+        if filtered_ai_message:
+            self._append_chat(user_id, "assistant", filtered_ai_message)
+
+        result = self._finalize(
+            ai_response,
+            self._source_for_openai_response(ai_response),
+            profile=profile,
+        )
+        result.setdefault("success", True)
+        return result
+
+    def answer_conversationally(self, user_id: str, message: str, profile: Any) -> dict[str, Any]:
+        """Route directly to the existing conversational AI fallback path."""
+        debug_id = _generate_debug_id()
+        try:
+            result = self._answer_with_ai_fallback(
+                user_id=user_id,
+                message=message,
+                profile=profile,
+                save_user_message=True,
+            )
+            if isinstance(result, dict):
+                result.setdefault("debug_id", debug_id)
+                message_text = str(result.get("message") or "").strip()
+                if not message_text:
+                    logger.error(
+                        "rico_empty_message_response user=%s type=%s source=%s",
+                        user_id,
+                        result.get("type", "unknown"),
+                        result.get("response_source", "unknown"),
+                    )
+                    error_response = build_error_response(
+                        "Rico could not produce a usable reply for that request. Please rephrase your request or ask a more specific question.",
+                        debug_id=debug_id,
+                        user_id=user_id,
+                    )
+                    for key in (
+                        "provider",
+                        "model",
+                        "response_source",
+                        "provider_state",
+                        "profile_context_present",
+                        "jotform_form_id",
+                        "fallback_model",
+                        "openai_model",
+                        "deepseek_model",
+                        "error",
+                        "error_detail",
+                        "is_rate_limited",
+                    ):
+                        if key in result:
+                            error_response[key] = result[key]
+                    error_response.setdefault("error", "empty_message")
+                    return error_response
+                result.setdefault("success", True)
+            return result
+        except Exception as exc:
+            return build_error_response(
+                "Something went wrong processing your message.",
+                debug_id=debug_id,
+                log_exc=exc,
+                user_id=user_id,
+            )
+
     def _process_message_inner(self, user_id: str, message: str) -> dict[str, Any]:
         self._append_chat(user_id, "user", message)
         completed = is_onboarding_complete(user_id)
@@ -1379,19 +1463,12 @@ class RicoChatAPI:
         )
 
         # Final fallback: use AI for natural reply, but never treat as job search
-        user_context = self._build_openai_context(profile)
-        blocked_questions = self._get_blocked_questions(profile)
-        if isinstance(user_context, dict):
-            user_context["blocked_questions"] = blocked_questions
-
-        ai_response = self._get_openai_agent().respond(message, user_context=user_context)
-        raw_ai_message = ai_response.get("message", "")
-        filtered_ai_message = self._preserve_ai_message(raw_ai_message, blocked_questions)
-        ai_response["message"] = filtered_ai_message
-
-        if filtered_ai_message:
-            self._append_chat(user_id, "assistant", filtered_ai_message)
-        return self._finalize(ai_response, self._source_for_openai_response(ai_response), profile=profile)
+        return self._answer_with_ai_fallback(
+            user_id=user_id,
+            message=message,
+            profile=profile,
+            save_user_message=False,
+        )
 
     # ── New intent-specific handlers ─────────────────────────────────────────
 
