@@ -36,6 +36,7 @@ from src.api.routers.onboarding import router as onboarding_router
 from src.api.routers.pipeline import router as pipeline_router
 from src.api.routers.settings import router as settings_router
 from src.api.routers.stats import router as stats_router
+from src.api.routers.subscription import router as subscription_router
 from src.api.routers.user import router as user_router
 
 logging.basicConfig(
@@ -45,9 +46,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ── Sentry (optional error tracking) ────────────────────────────────────────────
 def init_sentry() -> None:
-    """Initialize Sentry error tracking if SENTRY_DSN is set."""
     dsn = os.getenv("SENTRY_DSN", "").strip()
     if not dsn:
         return
@@ -67,16 +66,12 @@ def init_sentry() -> None:
         logger.exception("sentry_init_failed")
 
 
-# Initialize Sentry at module import time (once during app startup)
 init_sentry()
-
-# ── Lifespan ─────────────────────────────────────────────────────────────────
 
 _CRITICAL_TABLES = frozenset({"users", "action_audit_log", "password_reset_tokens"})
 
 
 def _check_critical_tables() -> None:
-    """Warn at startup if critical migration tables are absent from the DB."""
     from src.db import get_db_connection
     conn = get_db_connection()
     if not conn:
@@ -115,7 +110,6 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("rico_db_init skipped (DB unavailable or tables already exist)")
 
-    # Run settings migration to ensure threshold columns exist
     try:
         from src.db import init_db
         init_db()
@@ -126,8 +120,6 @@ async def lifespan(app: FastAPI):
     _check_critical_tables()
     yield
 
-
-# ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="Job Automation Platform",
@@ -146,11 +138,6 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
-# ── CORS ──────────────────────────────────────────────────────────────────────
-# CORS_ORIGINS: comma-separated list of allowed origins, or "*" for public endpoints.
-# Wildcard "*" disables credentials (incompatible per spec); use explicit origins for
-# authenticated routes. Default to localhost plus the production Rico domains.
-
 _DEFAULT_CORS_ORIGINS = ",".join(
     [
         "http://localhost:3000",
@@ -161,12 +148,6 @@ _DEFAULT_CORS_ORIGINS = ",".join(
 _origins_raw = os.getenv("CORS_ORIGINS", _DEFAULT_CORS_ORIGINS)
 _origins_list = [o.strip() for o in _origins_raw.split(",") if o.strip()]
 _wildcard = _origins_list == ["*"]
-
-if not _wildcard:
-    _required_rico_origins = {"https://ricohunt.com", "https://www.ricohunt.com"}
-    _missing_rico_origins = sorted(_required_rico_origins - set(_origins_list))
-    if _missing_rico_origins:
-        logger.warning("cors_origins_missing_recommended=%s", _missing_rico_origins)
 
 app.add_middleware(
     CORSMiddleware,
@@ -179,10 +160,6 @@ app.add_middleware(
 
 @app.middleware("http")
 async def hydrate_request_auth_context(request: Request, call_next):
-    """
-    Decode the access_token cookie once per request and expose auth context on
-    request.state for hybrid routes that support either authenticated or public flows.
-    """
     request.state.current_user = None
     request.state.user_id = None
     request.state.access_token_present = False
@@ -204,7 +181,6 @@ async def hydrate_request_auth_context(request: Request, call_next):
 
     return await call_next(request)
 
-# ── Routers ───────────────────────────────────────────────────────────────────
 
 app.include_router(auth_router)
 app.include_router(user_router)
@@ -217,112 +193,4 @@ app.include_router(stats_router)
 app.include_router(settings_router)
 app.include_router(onboarding_router)
 app.include_router(pipeline_router)
-
-# ── Global error handler ─────────────────────────────────────────────────────
-
-@app.exception_handler(Exception)
-async def unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
-    logger.exception("unhandled_error path=%s", request.url.path)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error"},
-    )
-
-# ── Version ───────────────────────────────────────────────────────────────────
-
-import datetime as _dt
-
-
-def _resolve_commit() -> str:
-    """Read commit from env vars set by Render/Vercel/CI."""
-    for key in (
-        "GIT_COMMIT",
-        "RENDER_GIT_COMMIT",
-        "VERCEL_GIT_COMMIT_SHA",
-        "COMMIT_SHA",
-        "CF_PAGES_COMMIT_SHA",
-    ):
-        val = os.getenv(key, "").strip()
-        if val:
-            return val
-    return "unknown"
-
-
-@app.get("/api/v1/version")
-def version() -> Dict[str, str]:
-    return {
-        "app": "rico",
-        "commit": _resolve_commit(),
-        "environment": os.getenv("ENVIRONMENT", os.getenv("RACK_ENV", "development")),
-        "deployed_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
-    }
-
-
-# ── Health + root ─────────────────────────────────────────────────────────────
-
-@app.api_route("/", methods=["GET", "HEAD"])
-def root() -> Dict[str, str]:
-    return {
-        "service": "Job Automation Platform",
-        "status": "ready",
-        "docs": "/api/docs",
-    }
-
-
-@app.get("/health")
-def health() -> Dict[str, Any]:
-    from src.db import is_db_available
-    from src.rico_env import get_rico_env_report
-    rico = get_rico_env_report()
-    return {
-        "status": "healthy",
-        "db": "connected" if is_db_available() else "json_fallback",
-        "version": "1.0.0",
-        "openai_key_present": rico.openai_key_present,
-        "deepseek_key_present": rico.deepseek_key_present,
-        "hf_key_present": rico.hf_key_present,
-        "ready_for_openai": rico.ready_for_openai,
-        "ready_for_deepseek": rico.ready_for_deepseek,
-        "ready_for_hf": rico.ready_for_hf,
-        "hf_available": rico.hf_available,
-        "ready_for_jotform": rico.ready_for_jotform,
-        "ai_provider": rico.ai_provider,
-        "rico": {
-            "ready_for_api":      rico.ready_for_api,
-            "ready_for_db":       rico.ready_for_db,
-            "ready_for_telegram": rico.ready_for_telegram,
-            "openai_key_present": rico.openai_key_present,
-            "deepseek_key_present": rico.deepseek_key_present,
-            "hf_key_present": rico.hf_key_present,
-            "ready_for_openai":   rico.ready_for_openai,
-            "ready_for_deepseek": rico.ready_for_deepseek,
-            "ready_for_jotform":  rico.ready_for_jotform,
-            "ready_for_hf":       rico.ready_for_hf,
-            "hf_available":       rico.hf_available,
-            "ai_provider":        rico.ai_provider,
-        },
-        "endpoints": {
-            "auth":         "/api/v1/auth/login",
-            "jobs":         "/api/v1/jobs",
-            "applications": "/api/v1/applications",
-            "stats":        "/api/v1/stats",
-            "settings":     "/api/v1/settings",
-            "pipeline":     "/api/v1/pipeline/status",
-            "actions":      "/api/v1/actions/run",
-            "rico_chat":    "/api/v1/rico/chat",
-            "docs":         "/api/docs",
-        },
-    }
-
-
-# ── Dev entrypoint ────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "src.api.app:app",
-        host="127.0.0.1",
-        port=8000,
-        reload=True,
-        log_level="info",
-    )
+app.include_router(subscription_router)
