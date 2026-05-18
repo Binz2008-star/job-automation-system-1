@@ -10,8 +10,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from src.rico.intent import IntentRouter
+
 logger = logging.getLogger(__name__)
 _UTC = timezone.utc
+_intent_router = IntentRouter()
 
 # ── Jotform field normalisation ───────────────────────────────────────────────
 # Maps raw Jotform label strings (as sent by the form or the Agent "Send API
@@ -86,16 +89,52 @@ def _has_user_data(payload: Dict[str, Any]) -> bool:
 # ── Public service functions ──────────────────────────────────────────────────
 
 def send_message(user_id: str, message: str) -> Dict[str, Any]:
-    """Route a chat message through RicoChatAPI and return the response dict.
+    """Phase 1 routing: IntentRouter first, legacy classifier second."""
+    from src.repositories.profile_repo import get_profile
 
-    RicoChatAPI.process_message → RicoOpenAIAgent.respond handles all provider
-    paths (OpenAI, HF free inference, fallback) and _finalize adds the required
-    diagnostic metadata (provider, response_source, hf_available, openai_available).
-    Never short-circuit to a hardcoded free-mode block — the agent already returns
-    the correct fallback text when no keys are present.
-    """
+    profile = get_profile(user_id)
+    profile_present = profile is not None
+
+    decision = _intent_router.route(
+        message=message,
+        user_id=user_id,
+        profile_context_present=profile_present,
+    )
+
+    if decision.should_use_ai:
+        return _conversational_ai_reply(
+            user_id=user_id,
+            message=message,
+            profile=profile,
+        )
+
+    return _legacy_send_message(user_id=user_id, message=message)
+
+
+def _legacy_send_message(user_id: str, message: str) -> Dict[str, Any]:
+    """Run the existing Rico chat pipeline unchanged."""
     from src.rico_chat_api import RicoChatAPI
+
     return RicoChatAPI().process_message(user_id=user_id, message=message)
+
+
+def _conversational_ai_reply(
+    *,
+    user_id: str,
+    message: str,
+    profile: Any,
+) -> Dict[str, Any]:
+    """Use the existing Rico conversational AI fallback path directly."""
+    from src.rico_chat_api import RicoChatAPI
+
+    result = RicoChatAPI().answer_conversationally(
+        user_id=user_id,
+        message=message,
+        profile=profile,
+    )
+    result["response_source"] = result.get("response_source") or "ai_router"
+    result["intent"] = "conversational"
+    return result
 
 
 def parse_cv(data: bytes, filename: str = "cv.pdf") -> Dict[str, Any]:

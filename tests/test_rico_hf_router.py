@@ -182,6 +182,55 @@ class TestHFClientFallback:
             result = classify_intent("find jobs", ["search for jobs", "help"])
         assert result is None
 
+    def test_classify_intent_parses_router_array_response(self):
+        from src.rico_hf_client import classify_intent
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.ok = True
+        mock_resp.json.return_value = [
+            {"label": "help", "score": 0.11},
+            {"label": "search for jobs", "score": 0.89},
+        ]
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch.dict(os.environ, {"HF_API_TOKEN": "fake-token"}):
+            with patch("src.rico_hf_client.requests.post", return_value=mock_resp) as post_mock:
+                result = classify_intent("find jobs", ["search for jobs", "help"])
+
+        assert result == {
+            "labels": ["search for jobs", "help"],
+            "scores": [0.89, 0.11],
+            "top_label": "search for jobs",
+            "top_score": 0.89,
+        }
+        assert post_mock.call_args.args[0] == (
+            "https://router.huggingface.co/hf-inference/models/facebook/bart-large-mnli"
+        )
+
+    def test_classify_intent_keeps_backward_compat_with_legacy_dict_response(self):
+        from src.rico_hf_client import classify_intent
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.ok = True
+        mock_resp.json.return_value = {
+            "labels": ["help", "search for jobs"],
+            "scores": [0.11, 0.89],
+        }
+        mock_resp.raise_for_status = MagicMock()
+
+        with patch.dict(os.environ, {"HF_API_TOKEN": "fake-token"}):
+            with patch("src.rico_hf_client.requests.post", return_value=mock_resp):
+                result = classify_intent("find jobs", ["search for jobs", "help"])
+
+        assert result == {
+            "labels": ["search for jobs", "help"],
+            "scores": [0.89, 0.11],
+            "top_label": "search for jobs",
+            "top_score": 0.89,
+        }
+
     def test_generate_text_returns_none_on_hf_error(self):
         from src.rico_hf_client import generate_text
         import requests
@@ -207,9 +256,12 @@ class TestHFClientFallback:
         mock_resp.json.return_value = [{"generated_text": "Here are some tips."}]
         mock_resp.raise_for_status = MagicMock()
         with patch.dict(os.environ, {"HF_API_TOKEN": "fake-token"}):
-            with patch("src.rico_hf_client.requests.post", return_value=mock_resp):
+            with patch("src.rico_hf_client.requests.post", return_value=mock_resp) as post_mock:
                 result = generate_text("interview tips")
         assert result == "Here are some tips."
+        assert post_mock.call_args.args[0] == (
+            "https://router.huggingface.co/hf-inference/models/HuggingFaceH4/zephyr-7b-beta"
+        )
 
 
 # ── RicoOpenAIAgent: HF primary, OpenAI disabled by default ──────────────────
