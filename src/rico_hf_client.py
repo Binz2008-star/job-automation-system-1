@@ -22,7 +22,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-_HF_API_BASE = "https://api-inference.huggingface.co/models"
+_HF_ROUTER_BASE = "https://router.huggingface.co/hf-inference/models"
 _DEFAULT_TEXT_MODEL = "HuggingFaceH4/zephyr-7b-beta"
 _DEFAULT_CLASSIFICATION_MODEL = "facebook/bart-large-mnli"
 _REQUEST_TIMEOUT = 25
@@ -42,6 +42,10 @@ def _headers() -> Dict[str, str]:
         "Authorization": "Bearer " + _get_token(),
         "Content-Type": "application/json",
     }
+
+
+def _model_url(model_id: str) -> str:
+    return _HF_ROUTER_BASE + "/" + model_id
 
 
 def is_available() -> bool:
@@ -69,7 +73,7 @@ def generate_text(
         return None
 
     model_id = model or os.getenv("HF_TEXT_MODEL", _DEFAULT_TEXT_MODEL)
-    url = _HF_API_BASE + "/" + model_id
+    url = _model_url(model_id)
 
     _lt = chr(60)
     _gt = chr(62)
@@ -137,7 +141,7 @@ def classify_intent(
         return None
 
     model_id = model or os.getenv("HF_CLASSIFICATION_MODEL", _DEFAULT_CLASSIFICATION_MODEL)
-    url = _HF_API_BASE + "/" + model_id
+    url = _model_url(model_id)
 
     try:
         resp = requests.post(
@@ -154,13 +158,32 @@ def classify_intent(
             return None
         resp.raise_for_status()
         data = resp.json()
-        if isinstance(data, dict) and "labels" in data and "scores" in data:
-            paired = sorted(zip(data["labels"], data["scores"]), key=lambda x: x[1], reverse=True)
+        paired: List[tuple[str, float]] = []
+        if isinstance(data, list):
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                label = item.get("label")
+                score = item.get("score")
+                if isinstance(label, str) and isinstance(score, (int, float)):
+                    paired.append((label, float(score)))
+        elif isinstance(data, dict) and "labels" in data and "scores" in data:
+            labels = data.get("labels")
+            scores = data.get("scores")
+            if isinstance(labels, list) and isinstance(scores, list):
+                paired = [
+                    (label, float(score))
+                    for label, score in zip(labels, scores)
+                    if isinstance(label, str) and isinstance(score, (int, float))
+                ]
+
+        if paired:
+            paired.sort(key=lambda x: x[1], reverse=True)
             return {
                 "labels": [p[0] for p in paired],
                 "scores": [p[1] for p in paired],
-                "top_label": paired[0][0] if paired else "",
-                "top_score": paired[0][1] if paired else 0.0,
+                "top_label": paired[0][0],
+                "top_score": paired[0][1],
             }
         return None
     except Exception as exc:
@@ -184,7 +207,7 @@ def summarize(
         return None
 
     model_id = model or os.getenv("HF_SUMMARIZATION_MODEL", "facebook/bart-large-cnn")
-    url = _HF_API_BASE + "/" + model_id
+    url = _model_url(model_id)
 
     try:
         resp = requests.post(

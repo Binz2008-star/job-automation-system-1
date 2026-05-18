@@ -35,7 +35,7 @@ _linkedin_company_targeter = None
 _linkedin_analyzer = None
 
 _HF_MODEL = os.getenv("HF_DECISION_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")
-_HF_URL = os.getenv("HF_TEXTGEN_URL", f"https://api-inference.huggingface.co/models/{_HF_MODEL}")
+_HF_URL = os.getenv("HF_TEXTGEN_URL", f"https://router.huggingface.co/hf-inference/models/{_HF_MODEL}")
 _TIMEOUT = int(os.getenv("HF_DECISION_TIMEOUT", "35"))
 _USE_LLM = os.getenv("USE_LLM_AGENT", "false").lower() in {"1", "true", "yes"}
 
