@@ -25,6 +25,7 @@ jobs:
             Branch: ${{ github.event.workflow_run.head_branch }}
             Commit: ${{ github.event.workflow_run.head_sha }}
             Run URL: ${{ github.event.workflow_run.html_url }}
+            Runbook: https://github.com/Binz2008-star/job-automation-system-1/wiki/Runbook
 
       - name: ✅ Resolve PagerDuty Incident on Success
         if: ${{ github.event.workflow_run.conclusion == 'success' }}
