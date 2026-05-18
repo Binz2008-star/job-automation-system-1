@@ -39,6 +39,15 @@ _DB_USER = User(
 client = TestClient(app, raise_server_exceptions=False)
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Reset rate limiter state between tests so per-IP limits don't accumulate."""
+    from src.api.rate_limit import limiter
+    limiter.reset()
+    yield
+    limiter.reset()
+
+
 # ── Helper ────────────────────────────────────────────────────────────────────
 
 def _fake_token() -> str:

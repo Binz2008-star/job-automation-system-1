@@ -26,7 +26,7 @@ import bcrypt as _bcrypt
 from fastapi import APIRouter, HTTPException, Request, Response
 from jose import JWTError, jwt
 
-from src.api.rate_limit import LIMIT_LOGIN, LIMIT_REGISTER, limiter
+from src.api.rate_limit import LIMIT_LOGIN, LIMIT_PASSWORD_RESET, LIMIT_REGISTER, limiter
 from src.schemas.auth import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
@@ -301,7 +301,8 @@ def _is_production() -> bool:
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
-def forgot_password(req: ForgotPasswordRequest) -> ForgotPasswordResponse:
+@limiter.limit(LIMIT_PASSWORD_RESET)
+def forgot_password(request: Request, req: ForgotPasswordRequest) -> ForgotPasswordResponse:
     """
     Initiate password reset. Always returns generic success to prevent email enumeration.
     Dev/local: logs reset URL to stdout.
@@ -341,7 +342,8 @@ def forgot_password(req: ForgotPasswordRequest) -> ForgotPasswordResponse:
 
 
 @router.post("/reset-password", response_model=ResetPasswordResponse)
-def reset_password(req: ResetPasswordRequest) -> ResetPasswordResponse:
+@limiter.limit(LIMIT_PASSWORD_RESET)
+def reset_password(request: Request, req: ResetPasswordRequest) -> ResetPasswordResponse:
     """Validate the reset token and set a new password."""
     from src.repositories.password_reset_repo import consume_reset_token
     from src.repositories.users_repo import update_password

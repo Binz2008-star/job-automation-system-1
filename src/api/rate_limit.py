@@ -47,6 +47,7 @@ LIMIT_REGISTER = "3/minute"     # self-signup — strict to prevent abuse
 LIMIT_CHAT     = "30/minute"    # Rico chat — generous for interactive use
 LIMIT_UPLOAD   = "10/minute"    # CV upload — heavy parsing, keep low
 LIMIT_WEBHOOK  = "60/minute"    # Jotform / Telegram — servers may burst
+LIMIT_PASSWORD_RESET = "3/minute"  # forgot/reset — anti-enumeration & token brute-force
 
 # ── 429 response handler ──────────────────────────────────────────────────────
 
